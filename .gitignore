@@ -1,0 +1,21 @@
+# Environment
+.env.local
+.env
+
+# Dependencies
+node_modules
+.pnp
+
+# Testing
+coverage
+
+# Next.js
+.next
+out
+
+# Production
+build
+
+# Misc
+.DS_Store
+.vercel
