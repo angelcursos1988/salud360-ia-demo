@@ -1,4 +1,5 @@
-import { chatWithClaude } from '../../lib/claude';
+// 1. Cambia la importación (ajusta el nombre si renombraste el archivo)
+import { chatWithGemini } from '../../lib/claude'; 
 import { saveMessage, getChatHistory } from '../../lib/supabase';
 
 export default async function handler(req, res) {
@@ -10,14 +11,19 @@ export default async function handler(req, res) {
     const { patientId, userMessage } = req.body;
 
     if (!patientId || !userMessage) {
-      return res.status(400).json({
-        error: 'Falta patientId o userMessage'
-      });
+      return res.status(400).json({ error: 'Falta patientId o userMessage' });
     }
 
+    // Guardar mensaje del usuario en Supabase
     await saveMessage(patientId, 'user', userMessage);
+    
+    // Obtener historial
     const history = await getChatHistory(patientId);
-    const assistantMessage = await chatWithClaude(history);
+    
+    // 2. CAMBIO AQUÍ: Llamamos a Gemini en lugar de Claude
+    const assistantMessage = await chatWithGemini(history);
+    
+    // Guardar respuesta de la IA en Supabase
     await saveMessage(patientId, 'assistant', assistantMessage);
 
     res.status(200).json({
