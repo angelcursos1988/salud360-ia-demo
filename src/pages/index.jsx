@@ -13,19 +13,18 @@ export default function Home() {
 
     setLoading(true);
     try {
-      // 1. Buscamos si el paciente ya existe. 
-      // Usamos .order y .limit(1) para evitar el error de múltiples filas (PGRST116)
+      // 1. Buscamos si el paciente ya existe (el más reciente)
       let { data: patient, error: searchError } = await supabase
         .from('patients')
         .select('id')
         .eq('name', name.trim())
-        .order('created_at', { ascending: false }) // Traer el más nuevo primero
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (searchError) throw searchError;
 
-      // 2. Si no existe ningún registro con ese nombre, lo creamos
+      // 2. Si no existe, lo creamos
       if (!patient) {
         const { data: newPatient, error: createError } = await supabase
           .from('patients')
@@ -37,11 +36,11 @@ export default function Home() {
         patient = newPatient;
       }
 
-      // 3. Redirigir al chat con el ID del perfil encontrado o creado
+      // 3. Redirigir al chat del paciente
       router.push(`/chat?id=${patient.id}`);
     } catch (error) {
       console.error("Error al acceder:", error);
-      alert("Hubo un error al cargar tu perfil. Revisa la consola.");
+      alert("Error al cargar el perfil.");
     } finally {
       setLoading(false);
     }
@@ -59,12 +58,12 @@ export default function Home() {
       }}>
         <img src="/logo.jpg" alt="Salud360" style={{ width: '80px', marginBottom: '20px', borderRadius: '12px' }} />
         <h1 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '24px' }}>Salud360 Nutrición</h1>
-        <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Ingresa tu nombre para continuar tu plan personalizado.</p>
+        <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Tu plan de salud personalizado</p>
         
         <form onSubmit={handleStart} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <input
             type="text"
-            placeholder="Escribe tu nombre completo"
+            placeholder="Introduce tu nombre completo"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -82,9 +81,26 @@ export default function Home() {
               cursor: 'pointer', fontSize: '16px' 
             }}
           >
-            {loading ? 'Buscando perfil...' : 'Entrar a mi Plan'}
+            {loading ? 'Entrando...' : 'Entrar a mi Plan'}
           </button>
         </form>
+
+        {/* --- SECCIÓN RECUPERADA PARA MÉDICOS --- */}
+        <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
+          <p style={{ fontSize: '14px', color: '#95a5a6', marginBottom: '10px' }}>¿Eres personal sanitario?</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            style={{ 
+              background: 'none', border: '1px solid #2c3e50', color: '#2c3e50',
+              padding: '8px 20px', borderRadius: '6px', cursor: 'pointer',
+              fontSize: '13px', fontWeight: '500', transition: 'all 0.3s'
+            }}
+            onMouseOver={(e) => { e.target.style.background = '#2c3e50'; e.target.style.color = 'white'; }}
+            onMouseOut={(e) => { e.target.style.background = 'none'; e.target.style.color = '#2c3e50'; }}
+          >
+            Acceso Médicos
+          </button>
+        </div>
       </div>
     </div>
   );
