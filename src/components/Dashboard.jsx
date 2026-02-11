@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { generatePatientReport } from '../lib/reportGenerator';
 
 export default function Dashboard() {
   const [patients, setPatients] = useState([]);
-  const [stats, setStats] = useState({ total: 0, critical: 0, active: 0 });
+  const [stats, setStats] = useState({ total: 0, critical: 0, stable: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -12,7 +13,8 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      // 1. Obtener pacientes
+      setLoading(true);
+      // 1. Obtener pacientes y su relación con avatars
       const { data: patientsData, error } = await supabase
         .from('patients')
         .select(`
@@ -25,15 +27,16 @@ export default function Dashboard() {
 
       setPatients(patientsData);
 
-      // 2. Calcular estadísticas básicas
+      // 2. Calcular estadísticas en tiempo real
       const total = patientsData.length;
-      // Consideramos "crítico" si la salud del avatar es menor a 50 (si tiene avatar)
-      const critical = patientsData.filter(p => p.avatars && p.avatars.length > 0 && p.avatars[0].health < 50).length;
+      const critical = patientsData.filter(p => 
+        p.avatars?.[0]?.health < 50
+      ).length;
       
       setStats({
         total,
         critical,
-        active: total // Por ahora todos cuentan como activos
+        stable: total - critical
       });
 
     } catch (error) {
@@ -43,7 +46,29 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>🏥 Cargando Panel Médico...</div>;
+  const downloadReport = async (patient) => {
+    try {
+      // Obtenemos los mensajes de este paciente específico
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('patient_id', patient.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Llamamos al generador de PDF que creamos en el paso anterior
+      generatePatientReport(patient, messages || []);
+    } catch (error) {
+      alert("Error al generar el reporte: " + error.message);
+    }
+  };
+
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+      <h2>🏥 Cargando Panel Médico...</h2>
+    </div>
+  );
 
   return (
     <div style={{ padding: '40px', fontFamily: 'system-ui, sans-serif', background: '#f4f6f8', minHeight: '100vh' }}>
@@ -52,37 +77,38 @@ export default function Dashboard() {
       <header style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ color: '#2c3e50', margin: 0 }}>Panel de Control Médico</h1>
-          <p style={{ color: '#7f8c8d', margin: '5px 0 0 0' }}>Salud360 - Vista de Especialista</p>
+          <p style={{ color: '#7f8c8d', margin: '5px 0 0 0' }}>Salud360 - Gestión de Pacientes e IA</p>
         </div>
-        <button onClick={fetchData} style={{ padding: '10px 20px', background: 'white', border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer' }}>
-          🔄 Actualizar
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={() => window.location.href = '/'} style={secondaryButtonStyle}>🏠 Volver Inicio</button>
+            <button onClick={fetchData} style={primaryButtonStyle}>🔄 Actualizar Datos</button>
+        </div>
       </header>
 
-      {/* KPI CARDS (Indicadores) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+      {/* TARJETAS DE INDICADORES (KPIs) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '40px' }}>
         <div style={cardStyle}>
           <h3 style={cardLabelStyle}>Pacientes Totales</h3>
           <p style={cardValueStyle}>{stats.total}</p>
         </div>
         <div style={cardStyle}>
-          <h3 style={cardLabelStyle}>⚠️ Atención Prioritaria</h3>
+          <h3 style={cardLabelStyle}>⚠️ Atención Crítica</h3>
           <p style={{ ...cardValueStyle, color: '#e74c3c' }}>{stats.critical}</p>
         </div>
         <div style={cardStyle}>
-          <h3 style={cardLabelStyle}>✅ Estables</h3>
-          <p style={{ ...cardValueStyle, color: '#27ae60' }}>{stats.total - stats.critical}</p>
+          <h3 style={cardLabelStyle}>✅ Estado Estable</h3>
+          <p style={{ ...cardValueStyle, color: '#27ae60' }}>{stats.stable}</p>
         </div>
       </div>
 
       {/* TABLA DE PACIENTES */}
-      <div style={{ background: 'white', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead style={{ background: '#f8f9fa', borderBottom: '2px solid #eee' }}>
             <tr>
-              <th style={thStyle}>Paciente</th>
-              <th style={thStyle}>Fecha Ingreso</th>
-              <th style={thStyle}>Estado de Salud (Avatar)</th>
+              <th style={thStyle}>Información Paciente</th>
+              <th style={thStyle}>Fecha de Registro</th>
+              <th style={thStyle}>Salud Avatar</th>
               <th style={thStyle}>Acciones</th>
             </tr>
           </thead>
@@ -90,29 +116,34 @@ export default function Dashboard() {
             {patients.map((patient) => (
               <tr key={patient.id} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={tdStyle}>
-                  <strong>{patient.name}</strong>
-                  <br/>
-                  <span style={{ fontSize: '12px', color: '#999' }}>ID: {patient.id.slice(0, 8)}...</span>
+                  <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{patient.name}</div>
+                  <div style={{ fontSize: '12px', color: '#95a5a6' }}>ID: {patient.id.split('-')[0]}...</div>
                 </td>
                 <td style={tdStyle}>
-                  {new Date(patient.created_at).toLocaleDateString()}
+                  {new Date(patient.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </td>
                 <td style={tdStyle}>
-                  {patient.avatars && patient.avatars.length > 0 ? (
-                    <div>
-                      <span style={{ marginRight: '10px' }}>
-                        {patient.avatars[0].health >= 50 ? '😊' : '🤒'}
-                      </span>
-                      <progress value={patient.avatars[0].health} max="100" style={{ width: '100px' }}></progress>
-                      <span style={{ marginLeft: '10px', fontSize: '12px' }}>{patient.avatars[0].health}%</span>
+                  {patient.avatars?.[0] ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '100px', background: '#eee', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${patient.avatars[0].health}%`, 
+                          background: patient.avatars[0].health < 50 ? '#e74c3c' : '#2ecc71',
+                          height: '100%' 
+                        }} />
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold' }}>{patient.avatars[0].health}%</span>
                     </div>
                   ) : (
-                    <span style={{ color: '#ccc' }}>Sin datos</span>
+                    <span style={{ color: '#bdc3c7', fontSize: '13px' }}>Sin avatar</span>
                   )}
                 </td>
                 <td style={tdStyle}>
-                  <button style={{ padding: '6px 12px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                    Ver Historial
+                  <button 
+                    onClick={() => downloadReport(patient)}
+                    style={downloadButtonStyle}
+                  >
+                    📥 Descargar Informe
                   </button>
                 </td>
               </tr>
@@ -121,16 +152,21 @@ export default function Dashboard() {
         </table>
         
         {patients.length === 0 && (
-          <p style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No hay pacientes registrados aún.</p>
+          <div style={{ padding: '40px', textAlign: 'center', color: '#95a5a6' }}>
+            <p>No hay pacientes registrados en la base de datos.</p>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-// Estilos simples en variables para no ensuciar el JSX
-const cardStyle = { background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' };
-const cardLabelStyle = { fontSize: '14px', color: '#7f8c8d', margin: '0 0 10px 0', textTransform: 'uppercase' };
-const cardValueStyle = { fontSize: '36px', fontWeight: 'bold', margin: 0, color: '#2c3e50' };
-const thStyle = { padding: '15px', color: '#7f8c8d', fontSize: '14px', fontWeight: '600' };
-const tdStyle = { padding: '15px', color: '#2c3e50' };
+// ESTILOS EN CONSTANTES
+const cardStyle = { background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #eaeaea' };
+const cardLabelStyle = { fontSize: '13px', color: '#95a5a6', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.5px' };
+const cardValueStyle = { fontSize: '32px', fontWeight: 'bold', margin: 0, color: '#2c3e50' };
+const thStyle = { padding: '18px 15px', color: '#7f8c8d', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase' };
+const tdStyle = { padding: '18px 15px' };
+const primaryButtonStyle = { padding: '10px 18px', background: '#3498db', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' };
+const secondaryButtonStyle = { padding: '10px 18px', background: 'white', color: '#7f8c8d', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer' };
+const downloadButtonStyle = { padding: '8px 14px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'background 0.2s' };
