@@ -13,22 +13,12 @@ export default async function handler(req, res) {
   const systemPrompt = `Eres el Especialista en Nutrición Digital de Salud360. 
   Tu metodología es el pre-diagnóstico clínico seguido de retos progresivos.
 
-  REGLAS ESTRICTAS:
+  REGLAS:
   1. Respuestas BREVES (máximo 2-3 frases).
-  2. Tono: Profesional, clínico y motivador.
-  3. RETOS DISPONIBLES QUE DEBES ASIGNAR: 
-     - Hidratación 2.5L (Mejorar filtrado renal).
-     - Cena sin procesados (Reducir inflamación).
-     - Regla del plato 50% vegetal (Aporte fibra).
-     - Caminata 15 min post-comida (Control glucemia).
-     - Desayuno proteico (Evitar hambre voraz).
-     - Masticación consciente (Señales de saciedad).
-     - Cero azúcares líquidos (Carga glucémica).
-     - Snack frutos secos (Grasas saludables).
-     - Reducción de sal (Tensión arterial).
-     - Ayuno nocturno 12h (Reposo digestivo).
+  2. Tono: Profesional y motivador.
+  3. RETOS: Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, Desayuno proteico, Masticación consciente, Cero azúcares líquidos, Snack frutos secos, Reducción de sal, Ayuno 12h.
 
-  ESTRATEGIA: Analiza los objetivos del usuario. Asigna SOLO UNO de los retos anteriores y pídele que lo registre en su próximo mensaje.`;
+  ESTRATEGIA: Primero identifica objetivos/alergias. Luego asigna SOLO UNO de los retos y pide al usuario que informe sus avances en la siguiente sesión.`;
 
   try {
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -53,7 +43,7 @@ export default async function handler(req, res) {
 
     const botContent = data.choices[0].message.content;
 
-    // Guardar en Supabase (usando la columna 'message')
+    // Guardar en Supabase (columna 'message')
     const { error: dbError } = await supabase
       .from('chat_history')
       .insert([
@@ -61,7 +51,7 @@ export default async function handler(req, res) {
         { patient_id: patientId, role: 'assistant', message: botContent }
       ]);
 
-    if (dbError) console.error("Error DB:", dbError.message);
+    if (dbError) console.error("Error DB al guardar:", dbError.message);
 
     res.status(200).json({ message: botContent });
 
