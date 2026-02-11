@@ -5,7 +5,6 @@ import { generatePatientReport } from '../lib/reportGenerator';
 export default function Dashboard() {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, critical: 0 });
 
   useEffect(() => {
     fetchData();
@@ -14,7 +13,6 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Obtenemos pacientes y sus avatars
       const { data, error } = await supabase
         .from('patients')
         .select('*, avatars(health)')
@@ -22,20 +20,15 @@ export default function Dashboard() {
 
       if (error) throw error;
       setPatients(data || []);
-      setStats({
-        total: data.length,
-        critical: data.filter(p => p.avatars?.[0]?.health < 50).length
-      });
     } catch (err) {
-      console.error("Error al cargar pacientes:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownload = async (patient) => {
+  const downloadReport = async (patient) => {
     try {
-      // 1. Consultamos la tabla correcta: chat_history
       const { data: messages, error } = await supabase
         .from('chat_history')
         .select('*')
@@ -43,57 +36,63 @@ export default function Dashboard() {
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-
-      // 2. Verificamos si hay mensajes antes de intentar el PDF
       if (!messages || messages.length === 0) {
-        alert("No se encontraron mensajes en 'chat_history' para este paciente.");
+        alert("El paciente no tiene historial de chats.");
         return;
       }
 
-      // 3. Llamamos al generador
       await generatePatientReport(patient, messages);
-
     } catch (err) {
-      console.error("Error en la descarga:", err);
-      alert("Error al obtener el historial de chat.");
+      alert("Error en la conexión con la base de datos.");
     }
   };
 
-  if (loading) return <div style={{ padding: '50px', textAlign: 'center' }}>Cargando Panel Médico...</div>;
+  if (loading) return <div style={{ padding: '50px', textAlign: 'center' }}>Cargando datos médicos...</div>;
 
   return (
-    <div style={{ padding: '40px', fontFamily: 'sans-serif', background: '#f0f2f5', minHeight: '100vh' }}>
+    <div style={{ padding: '40px', background: '#f4f7f6', minHeight: '100vh', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px' }}>
-          <h1>🏥 Panel Médico Salud360</h1>
-          <button onClick={() => window.location.href = '/'} style={btnSecondary}>Volver Inicio</button>
+        
+        {/* HEADER CON LOGO */}
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <img src="/logo.jpg" alt="Logo" style={{ width: '50px', height: '50px', borderRadius: '10px', objectFit: 'cover' }} />
+            <h1 style={{ color: '#2c3e50', margin: 0 }}>Panel de Control Salud360</h1>
+          </div>
+          <button onClick={() => window.location.href = '/'} style={btnSecondary}>🏠 Volver al Inicio</button>
         </header>
 
-        <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-          <div style={cardStyle}><strong>Total:</strong> {stats.total}</div>
-          <div style={{...cardStyle, color: 'red'}}><strong>Atención Crítica:</strong> {stats.critical}</div>
-        </div>
-
-        <div style={{ background: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+        {/* TABLA DE PACIENTES */}
+        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8f9fa' }}>
               <tr>
-                <th style={tdStyle}>Paciente</th>
-                <th style={tdStyle}>Estado</th>
-                <th style={tdStyle}>Acción</th>
+                <th style={thStyle}>Paciente</th>
+                <th style={thStyle}>Estado Vital</th>
+                <th style={thStyle}>Acción</th>
               </tr>
             </thead>
             <tbody>
               {patients.map(p => (
-                <tr key={p.id} style={{ borderTop: '1px solid #eee' }}>
-                  <td style={tdStyle}>{p.name}</td>
-                  <td style={tdStyle}>{p.avatars?.[0]?.health || 100}% Salud</td>
+                <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={tdStyle}>
-                    <button 
-                      onClick={() => handleDownload(p)}
-                      style={btnPrimary}
-                    >
-                      📥 Descargar PDF
+                    <strong>{p.name}</strong><br/>
+                    <small style={{ color: '#999' }}>{p.id.slice(0, 8)}</small>
+                  </td>
+                  <td style={tdStyle}>
+                    <span style={{ 
+                      padding: '4px 10px', 
+                      borderRadius: '20px', 
+                      fontSize: '12px',
+                      background: p.avatars?.[0]?.health > 50 ? '#e3f9e5' : '#fee2e2',
+                      color: p.avatars?.[0]?.health > 50 ? '#27ae60' : '#ef4444'
+                    }}>
+                      Salud: {p.avatars?.[0]?.health || 100}%
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <button onClick={() => downloadReport(p)} style={btnDownload}>
+                      📥 Descargar Informe PDF
                     </button>
                   </td>
                 </tr>
@@ -106,8 +105,8 @@ export default function Dashboard() {
   );
 }
 
-// Estilos
-const tdStyle = { padding: '15px', textAlign: 'left' };
-const cardStyle = { background: 'white', padding: '20px', borderRadius: '8px', flex: 1, textAlign: 'center' };
-const btnPrimary = { background: '#27ae60', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer' };
-const btnSecondary = { background: '#95a5a6', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer' };
+// Estilos rápidos
+const thStyle = { padding: '20px', textAlign: 'left', color: '#7f8c8d', fontSize: '14px' };
+const tdStyle = { padding: '20px' };
+const btnDownload = { background: '#16a085', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
+const btnSecondary = { background: 'white', border: '1px solid #ddd', padding: '10px 15px', borderRadius: '6px', cursor: 'pointer' };
