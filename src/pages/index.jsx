@@ -1,130 +1,50 @@
 import { useState } from 'react';
-import ChatWindow from '../components/ChatWindow';
-import Avatar from '../components/Avatar'; 
-import { supabase } from '../lib/supabase'; 
+import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabase';
 
 export default function Home() {
-  const [patientId, setPatientId] = useState(null);
-  const [patientName, setPatientName] = useState('');
-  const [showChat, setShowChat] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState('');
+  const router = useRouter();
 
   const handleStart = async (e) => {
     e.preventDefault();
-    if (!patientName.trim()) return;
-
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('patients')
-        .insert({ name: patientName })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setPatientId(data.id);
-      setShowChat(true);
-    } catch (error) {
-      alert('Error: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
+    if (!name) return;
+    const { data, error } = await supabase
+      .from('patients')
+      .insert([{ name }])
+      .select();
+    if (!error) router.push(`/chat?id=${data[0].id}`);
   };
 
-  // VISTA DEL CHAT + AVATAR (Split Screen)
-  if (showChat && patientId) {
-    return (
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: '1fr 350px', 
-        height: '100vh',
-        maxWidth: '100%',
-        overflow: 'hidden'
-      }}>
-        <div style={{ height: '100%', borderRight: '1px solid #ccc' }}>
-          <ChatWindow patientId={patientId} />
-        </div>
-        <div style={{ height: '100%', background: '#f8f9fa' }}>
-          <Avatar patientId={patientId} />
-        </div>
-      </div>
-    );
-  }
-
-  // VISTA DE LOGIN CON ACCESO MÉDICO
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1abc9c 0%, #16a085 100%)',
-      color: 'white',
-      fontFamily: 'system-ui, sans-serif'
+    <div style={{ 
+      height: '100vh', display: 'flex', flexDirection: 'column', 
+      alignItems: 'center', justifyContent: 'center', background: '#f0f2f5', fontFamily: 'sans-serif' 
     }}>
-      <div style={{ textAlign: 'center', maxWidth: '400px' }}>
-        <h1 style={{ fontSize: '48px', marginBottom: '10px' }}>🏥 Salud360 IA</h1>
-        <p style={{ fontSize: '18px', marginBottom: '40px' }}>
-          Tu asistente de salud con IA y Avatar
-        </p>
-
-        <form onSubmit={handleStart} style={{
-          background: 'rgba(255,255,255,0.1)',
-          padding: '30px',
-          borderRadius: '15px',
-          backdropFilter: 'blur(10px)',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-        }}>
-          <label style={{ display: 'block', marginBottom: '10px', textAlign: 'left', fontWeight:'bold' }}>
-            ¿Cómo te llamas?
-          </label>
+      {/* --- LOGO EN INICIO --- */}
+      <img 
+        src="/logo.jpg" 
+        alt="Logo" 
+        style={{ width: '120px', height: '120px', borderRadius: '20px', marginBottom: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }} 
+      />
+      
+      <div style={{ background: 'white', padding: '40px', borderRadius: '15px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', textAlign: 'center' }}>
+        <h1 style={{ color: '#2c3e50', marginBottom: '10px' }}>Salud360 IA</h1>
+        <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Ingrese su nombre para comenzar la consulta</p>
+        
+        <form onSubmit={handleStart} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <input
             type="text"
-            value={patientName}
-            onChange={(e) => setPatientName(e.target.value)}
-            placeholder="Ej: Ana García"
-            style={{
-              width: '100%',
-              padding: '12px',
-              marginBottom: '20px',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              color: '#333'
-            }}
-            disabled={loading}
+            placeholder="Nombre completo"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px' }}
           />
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: 'white',
-              color: '#16a085',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              fontSize: '16px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.8 : 1
-            }}
-          >
-            {loading ? '⏳ Iniciando...' : '✨ Entrar'}
+          <button type="submit" style={{ padding: '12px', background: '#16a085', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+            Comenzar Consulta
           </button>
         </form>
       </div>
-
-      {/* Acceso para Médicos al Dashboard */}
-      <div style={{ marginTop: '30px', opacity: 0.6 }}>
-        <a href="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '14px', borderBottom: '1px solid white' }}>
-          👨‍⚕️ Acceso Panel Médico
-        </a>
-      </div>
-      
     </div>
   );
 }
