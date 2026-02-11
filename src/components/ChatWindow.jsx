@@ -6,6 +6,16 @@ export default function ChatWindow({ patientId }) {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
+  // Mensaje de bienvenida automático al cargar el chat
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([{
+        role: 'assistant',
+        message: "Hola. Soy tu Especialista en Nutrición Digital. Mi objetivo es acompañarte en la mejora de tu salud a través de un pre-diagnóstico clínico y retos progresivos. Para comenzar: ¿Cuál es tu objetivo principal de salud hoy y tienes alguna condición médica o alergia?"
+      }]);
+    }
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -23,23 +33,15 @@ export default function ChatWindow({ patientId }) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientId: patientId,
-          userMessage: userText
-        })
+        body: JSON.stringify({ patientId, userMessage: userText })
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Error desconocido');
 
       setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
-      
     } catch (error) {
-      console.error('Error:', error);
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        message: `Hubo un problema: ${error.message}` 
-      }]);
+      setMessages(prev => [...prev, { role: 'assistant', message: `Error: ${error.message}` }]);
     } finally {
       setLoading(false);
     }
@@ -47,25 +49,19 @@ export default function ChatWindow({ patientId }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f4f7f6' }}>
-      <div style={{ padding: '15px 25px', background: 'white', borderBottom: '2px solid #1abc9c', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ padding: '15px 25px', background: 'white', borderBottom: '2px solid #27ae60', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <img src="/logo.jpg" alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
         <div>
-          <h2 style={{ margin: 0, fontSize: '16px', color: '#2c3e50' }}>Asistente Salud360</h2>
-          <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>● En línea</span>
+          <h2 style={{ margin: 0, fontSize: '16px', color: '#2c3e50' }}>Nutrición Salud360</h2>
+          <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>● Especialista en línea</span>
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {messages.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#95a5a6', marginTop: '20px' }}>
-            <p>👋 Hola, cuéntame tus síntomas.</p>
-          </div>
-        )}
-        
         {messages.map((msg, idx) => (
           <div key={idx} style={{
             alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-            background: msg.role === 'user' ? '#1abc9c' : 'white',
+            background: msg.role === 'user' ? '#27ae60' : 'white',
             color: msg.role === 'user' ? 'white' : '#34495e',
             padding: '12px 16px',
             borderRadius: '12px',
@@ -75,7 +71,7 @@ export default function ChatWindow({ patientId }) {
             {msg.message}
           </div>
         ))}
-        {loading && <div style={{ fontSize: '12px', color: '#7f8c8d' }}>Analizando...</div>}
+        {loading && <div style={{ fontSize: '12px', color: '#7f8c8d' }}>Analizando progreso...</div>}
         <div ref={messagesEndRef} />
       </div>
 
@@ -83,10 +79,10 @@ export default function ChatWindow({ patientId }) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Escribe tus síntomas..."
+          placeholder="Responde al especialista..."
           style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '25px', outline: 'none' }}
         />
-        <button type="submit" style={{ padding: '10px 20px', background: '#1abc9c', color: 'white', border: 'none', borderRadius: '25px', cursor: 'pointer' }}>
+        <button type="submit" style={{ padding: '10px 20px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '25px', cursor: 'pointer' }}>
           Enviar
         </button>
       </form>

@@ -10,8 +10,27 @@ export default async function handler(req, res) {
 
   const { userMessage, patientId } = req.body;
 
+  const systemPrompt = `Eres el Especialista en Nutrición Digital de Salud360. 
+  Tu metodología es el pre-diagnóstico clínico seguido de retos progresivos.
+
+  REGLAS ESTRICTAS:
+  1. Respuestas BREVES (máximo 2-3 frases).
+  2. Tono: Profesional, clínico y motivador.
+  3. RETOS DISPONIBLES QUE DEBES ASIGNAR: 
+     - Hidratación 2.5L (Mejorar filtrado renal).
+     - Cena sin procesados (Reducir inflamación).
+     - Regla del plato 50% vegetal (Aporte fibra).
+     - Caminata 15 min post-comida (Control glucemia).
+     - Desayuno proteico (Evitar hambre voraz).
+     - Masticación consciente (Señales de saciedad).
+     - Cero azúcares líquidos (Carga glucémica).
+     - Snack frutos secos (Grasas saludables).
+     - Reducción de sal (Tensión arterial).
+     - Ayuno nocturno 12h (Reposo digestivo).
+
+  ESTRATEGIA: Analiza los objetivos del usuario. Asigna SOLO UNO de los retos anteriores y pídele que lo registre en su próximo mensaje.`;
+
   try {
-    // 1. LLAMADA A GROQ (IA)
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -21,14 +40,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile", 
         messages: [
-          { 
-            role: "system", 
-            content: "Eres un asistente médico breve de Salud360. Responde en máximo 2 frases. Sé empático y termina con una pregunta corta." 
-          },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userMessage }
         ],
         temperature: 0.6,
-        max_tokens: 100
+        max_tokens: 150
       })
     });
 
@@ -37,8 +53,7 @@ export default async function handler(req, res) {
 
     const botContent = data.choices[0].message.content;
 
-    // 2. GUARDAR EN SUPABASE
-    // Usamos 'message' porque así está definido en tu base de datos
+    // Guardar en Supabase (usando la columna 'message')
     const { error: dbError } = await supabase
       .from('chat_history')
       .insert([
@@ -46,12 +61,11 @@ export default async function handler(req, res) {
         { patient_id: patientId, role: 'assistant', message: botContent }
       ]);
 
-    if (dbError) throw new Error(`Error DB: ${dbError.message}`);
+    if (dbError) console.error("Error DB:", dbError.message);
 
     res.status(200).json({ message: botContent });
 
   } catch (error) {
-    console.error("LOG ERROR API:", error.message);
     res.status(500).json({ error: error.message });
   }
 }
