@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import ChatWindow from '../components/ChatWindow';
-import Avatar from '../components/Avatar'; // Importamos el nuevo componente
-import { supabase } from '../lib/supabase'; // Asegúrate que esta ruta es correcta
+import Avatar from '../components/Avatar'; 
+import { supabase } from '../lib/supabase'; 
 
 export default function Home() {
   const [patientId, setPatientId] = useState(null);
@@ -9,14 +9,12 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Función para crear paciente y arrancar
   const handleStart = async (e) => {
     e.preventDefault();
     if (!patientName.trim()) return;
 
     setLoading(true);
     try {
-      // Insertamos el paciente en Supabase
       const { data, error } = await supabase
         .from('patients')
         .insert({ name: patientName })
@@ -39,17 +37,14 @@ export default function Home() {
     return (
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: '1fr 350px', // Chat ancho, Avatar fijo de 350px
+        gridTemplateColumns: '1fr 350px', 
         height: '100vh',
         maxWidth: '100%',
         overflow: 'hidden'
       }}>
-        {/* Columna Izquierda: Chat */}
         <div style={{ height: '100%', borderRight: '1px solid #ccc' }}>
           <ChatWindow patientId={patientId} />
         </div>
-
-        {/* Columna Derecha: Avatar */}
         <div style={{ height: '100%', background: '#f8f9fa' }}>
           <Avatar patientId={patientId} />
         </div>
@@ -57,7 +52,7 @@ export default function Home() {
     );
   }
 
-  // VISTA DE LOGIN (Igual que antes)
+  // VISTA DE LOGIN CON ACCESO MÉDICO
   return (
     <div style={{
       display: 'flex',
@@ -122,6 +117,14 @@ export default function Home() {
           </button>
         </form>
       </div>
+
+      {/* Acceso para Médicos al Dashboard */}
+      <div style={{ marginTop: '30px', opacity: 0.6 }}>
+        <a href="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '14px', borderBottom: '1px solid white' }}>
+          👨‍⚕️ Acceso Panel Médico
+        </a>
+      </div>
+      
     </div>
   );
 }
