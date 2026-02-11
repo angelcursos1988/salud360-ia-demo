@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ChatWindow from '../components/ChatWindow';
-import { supabase } from '../lib/supabase';
+import Avatar from '../components/Avatar'; // Importamos el nuevo componente
+import { supabase } from '../lib/supabase'; // Asegúrate que esta ruta es correcta
 
 export default function Home() {
   const [patientId, setPatientId] = useState(null);
@@ -8,20 +9,23 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const createPatient = async (e) => {
+  // Función para crear paciente y arrancar
+  const handleStart = async (e) => {
     e.preventDefault();
     if (!patientName.trim()) return;
 
     setLoading(true);
     try {
+      // Insertamos el paciente en Supabase
       const { data, error } = await supabase
         .from('patients')
         .insert({ name: patientName })
-        .select();
+        .select()
+        .single();
 
       if (error) throw error;
 
-      setPatientId(data[0].id);
+      setPatientId(data.id);
       setShowChat(true);
     } catch (error) {
       alert('Error: ' + error.message);
@@ -30,10 +34,30 @@ export default function Home() {
     }
   };
 
+  // VISTA DEL CHAT + AVATAR (Split Screen)
   if (showChat && patientId) {
-    return <ChatWindow patientId={patientId} />;
+    return (
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 350px', // Chat ancho, Avatar fijo de 350px
+        height: '100vh',
+        maxWidth: '100%',
+        overflow: 'hidden'
+      }}>
+        {/* Columna Izquierda: Chat */}
+        <div style={{ height: '100%', borderRight: '1px solid #ccc' }}>
+          <ChatWindow patientId={patientId} />
+        </div>
+
+        {/* Columna Derecha: Avatar */}
+        <div style={{ height: '100%', background: '#f8f9fa' }}>
+          <Avatar patientId={patientId} />
+        </div>
+      </div>
+    );
   }
 
+  // VISTA DE LOGIN (Igual que antes)
   return (
     <div style={{
       display: 'flex',
@@ -43,36 +67,37 @@ export default function Home() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #1abc9c 0%, #16a085 100%)',
       color: 'white',
-      fontFamily: 'Arial, sans-serif'
+      fontFamily: 'system-ui, sans-serif'
     }}>
       <div style={{ textAlign: 'center', maxWidth: '400px' }}>
         <h1 style={{ fontSize: '48px', marginBottom: '10px' }}>🏥 Salud360 IA</h1>
         <p style={{ fontSize: '18px', marginBottom: '40px' }}>
-          Pre-diagnóstico inteligente con IA
+          Tu asistente de salud con IA y Avatar
         </p>
 
-        <form onSubmit={createPatient} style={{
+        <form onSubmit={handleStart} style={{
           background: 'rgba(255,255,255,0.1)',
           padding: '30px',
-          borderRadius: '10px',
-          backdropFilter: 'blur(10px)'
+          borderRadius: '15px',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
-          <label style={{ display: 'block', marginBottom: '10px', textAlign: 'left' }}>
-            Tu nombre:
+          <label style={{ display: 'block', marginBottom: '10px', textAlign: 'left', fontWeight:'bold' }}>
+            ¿Cómo te llamas?
           </label>
           <input
             type="text"
             value={patientName}
             onChange={(e) => setPatientName(e.target.value)}
-            placeholder="Ej: Juan García"
+            placeholder="Ej: Ana García"
             style={{
               width: '100%',
-              padding: '10px',
+              padding: '12px',
               marginBottom: '20px',
               border: 'none',
-              borderRadius: '5px',
-              fontSize: '14px',
-              boxSizing: 'border-box'
+              borderRadius: '8px',
+              fontSize: '16px',
+              color: '#333'
             }}
             disabled={loading}
           />
@@ -83,23 +108,19 @@ export default function Home() {
             style={{
               width: '100%',
               padding: '12px',
-              background: '#fff',
-              color: '#1abc9c',
+              background: 'white',
+              color: '#16a085',
               border: 'none',
-              borderRadius: '5px',
+              borderRadius: '8px',
               fontWeight: 'bold',
               fontSize: '16px',
               cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1
+              opacity: loading ? 0.8 : 1
             }}
           >
-            {loading ? '⏳ Creando...' : '✨ Iniciar Chat'}
+            {loading ? '⏳ Iniciando...' : '✨ Entrar'}
           </button>
         </form>
-
-        <p style={{ marginTop: '30px', fontSize: '12px', opacity: 0.8 }}>
-          Tu información está completamente segura
-        </p>
       </div>
     </div>
   );
