@@ -1,5 +1,4 @@
-// 1. Cambia la importación (ajusta el nombre si renombraste el archivo)
-import { chatWithGemini } from '../../lib/claude'; 
+import chatWithGemini from '../../lib/claude';
 import { saveMessage, getChatHistory } from '../../lib/supabase';
 
 export default async function handler(req, res) {

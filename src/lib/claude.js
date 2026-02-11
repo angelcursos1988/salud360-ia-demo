@@ -1,38 +1,35 @@
-export const chatWithClaude = async (messages) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+import Groq from "groq-sdk";
 
-  if (!apiKey) {
-    throw new Error("API key no configurada");
-  }
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
+const systemPrompt = `Eres un asistente médico de pre-diagnóstico para Salud360.
+Tu rol es:
+1. Escuchar al paciente y hacer preguntas relevantes.
+2. Recopilar síntomas y antecedentes.
+3. Generar un resumen preliminar.
+4. NUNCA dar diagnósticos definitivos.
+5. SIEMPRE recomendar ver a un especialista.`;
+
+export const chatWithGemini = async (messages) => {
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 500,
-        system: "Eres un asistente de salud. Escucha síntomas pero nunca diagnostiques.",
-        messages: messages.map(msg => ({
-          role: msg.role,
-          content: msg.message || msg.content
+    const response = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages.map(msg => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.message || msg.content || ""
         }))
-      })
+      ],
+      model: "llama-3.3-70b-versatile", // Un modelo muy potente y gratuito
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || "Error en API");
-    }
-
-    const data = await response.json();
-    return data.content[0].text;
+    return response.choices[0].message.content;
   } catch (error) {
-    console.error("Error:", error);
-    throw error;
+    console.error('Error Groq:', error);
+    return "Lo siento, hubo un error en la conexión. Verifica tu API Key de Groq.";
   }
 };
+
+export default chatWithGemini;
