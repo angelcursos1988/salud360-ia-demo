@@ -1,6 +1,7 @@
-import html2pdf from 'html2pdf.js';
+export const generatePatientReport = async (patient, messages) => {
+  // Importación dinámica: Solo se carga cuando se llama a la función (en el cliente)
+  const html2pdf = (await import('html2pdf.js')).default;
 
-export const generatePatientReport = (patient, messages) => {
   const element = document.createElement('div');
   element.innerHTML = `
     <div style="padding: 40px; font-family: sans-serif; color: #333;">
@@ -21,10 +22,6 @@ export const generatePatientReport = (patient, messages) => {
           </p>
         `).join('')}
       </div>
-      
-      <footer style="margin-top: 50px; font-size: 12px; color: #999; text-align: center;">
-        Este es un pre-informe generado por IA. Debe ser validado por un profesional colegiado.
-      </footer>
     </div>
   `;
 
