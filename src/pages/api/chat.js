@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-// Configuración de Supabase para guardar el historial
+
+// Inicializamos Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -12,21 +13,8 @@ export default async function handler(req, res) {
 
   const { userMessage, patientId } = req.body;
 
-  // --- CONFIGURACIÓN DEL COMPORTAMIENTO DEL BOT ---
-  const systemPrompt = `
-    Eres un asistente médico de la plataforma Salud360.
-    Tu objetivo es realizar un pre-diagnóstico conversacional.
-    
-    REGLAS ESTRICTAS:
-    1. Responde de forma MUY BREVE (máximo 2 frases).
-    2. No des parrafadas ni listas largas de consejos.
-    3. Sé empático (ej. "Siento mucho que estés pasando por eso").
-    4. Termina SIEMPRE con una pregunta corta para obtener más detalles.
-    5. No diagnostiques con seguridad, usa términos como "podría ser" o "parece".
-  `;
-
   try {
-    // 1. Llamada a la IA (Groq en este ejemplo, asegúrate de tener la KEY en .env)
+    // 1. LLAMADA A LA IA (GROQ/OPENAI)
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -34,26 +22,27 @@ export default async function handler(req, res) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // o el modelo que prefieras
+        model: "llama-3.3-70b-versatile", 
         messages: [
-          { role: "system", content: systemPrompt },
+          { 
+            role: "system", 
+            content: "Eres un asistente médico de Salud360. REGLA DE ORO: Tus respuestas deben ser MUY BREVES (máximo 2 frases). Sé empático y termina siempre con una pregunta corta para el paciente. No des parrafadas." 
+          },
           { role: "user", content: userMessage }
         ],
         temperature: 0.6,
-        max_tokens: 100 // Límite físico para evitar parrafadas
+        max_tokens: 100
       })
     });
 
     const data = await aiResponse.json();
     
-    if (!aiResponse.ok) {
-      throw new Error(data.error?.message || 'Error en la IA');
-    }
+    if (!aiResponse.ok) throw new Error(data.error?.message || 'Error en IA');
 
     const botContent = data.choices[0].message.content;
 
-    // 2. GUARDAR EN SUPABASE (Vital para el informe PDF)
-    // Guardamos tanto el mensaje del usuario como el de la IA
+    // 2. GUARDAR EN SUPABASE
+    // Nota: Si tu tabla usa la columna 'message', cambia 'content' por 'message' abajo.
     const { error: dbError } = await supabase
       .from('chat_history')
       .insert([
@@ -61,16 +50,13 @@ export default async function handler(req, res) {
         { patient_id: patientId, role: 'assistant', content: botContent }
       ]);
 
-    if (dbError) {
-      console.error("Error guardando en Supabase:", dbError);
-      // No bloqueamos la respuesta aunque falle la DB, pero lo logueamos
-    }
+    if (dbError) console.error("Error guardando historial:", dbError);
 
-    // 3. Respuesta al Frontend
-    return res.status(200).json({ message: botContent });
+    // 3. ENVIAR RESPUESTA AL FRONTEND
+    res.status(200).json({ message: botContent });
 
   } catch (error) {
-    console.error("Error en la ruta /api/chat:", error);
-    return res.status(500).json({ error: "Hubo un problema con la conexión del asistente." });
+    console.error("LOG ERROR API:", error);
+    res.status(500).json({ error: "Error de conexión con el asistente" });
   }
 }
