@@ -1,5 +1,4 @@
-import { createClient } from '@supabase/supabase-client';
-
+import { createClient } from '@supabase/supabase-js';
 // Configuración de Supabase para guardar el historial
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
