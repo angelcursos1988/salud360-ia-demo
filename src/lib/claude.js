@@ -31,5 +31,8 @@ export const chatWithGemini = async (messages) => {
     return "Lo siento, hubo un error en la conexión. Verifica tu API Key de Groq.";
   }
 };
+<<<<<<< HEAD
 
 export default chatWithGemini;
+=======
+>>>>>>> 6c130aa3c1847c31511077b71f1b8f5be1e4a6a9
