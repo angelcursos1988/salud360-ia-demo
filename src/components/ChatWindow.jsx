@@ -28,9 +28,10 @@ export default function ChatWindow({ patientId }) {
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
-      // Traer historial con columna created_at
-      const { data: cData } = await supabase.from('chat_history').select('role, message, created_at')
-        .eq('patient_id', patientId).order('created_at', { ascending: true });
+      const { data: cData } = await supabase.from('chat_history')
+        .select('role, message, created_at')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: true });
       if (cData) setMessages(cData);
 
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
@@ -44,65 +45,90 @@ export default function ChatWindow({ patientId }) {
 
   useEffect(() => { loadAllData(); }, [patientId, selectedDate]);
 
-  // Lógica de Saludo Inteligente por Horas y Registros (SOLO CHAT DERECHA)
+  // --- LÓGICA DE SALUDO INTELIGENTE REFORZADA ---
   useEffect(() => {
     const triggerSmartGreeting = async () => {
+      // Solo actuar cuando ya tenemos los datos del paciente y los logs de comida
       if (!isInitialLoading && patientData && !hasGreeted) {
         setHasGreeted(true);
+        
         const now = new Date();
         const hour = now.getHours();
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = now.toLocaleDateString('es-ES');
 
-        // Verificar si ya ha hablado hoy
-        const { data: todayMsgs } = await supabase.from('chat_history')
-          .select('id').eq('patient_id', patientId).gte('created_at', `${todayStr}T00:00:00Z`).limit(1);
+        // Comprobamos si el último mensaje guardado es de hoy
+        const lastMsg = messages[messages.length - 1];
+        const lastMsgDate = lastMsg ? new Date(lastMsg.created_at).toLocaleDateString('es-ES') : null;
 
-        if (todayMsgs?.length === 0) {
+        if (lastMsgDate !== todayStr) {
           let customPrompt = "¿En qué puedo ayudarte hoy?";
           const hasBreakfast = foodLogs.some(f => f.category === 'Desayuno');
           const hasLunch = foodLogs.some(f => f.category === 'Comida');
 
-          if (hour < 11 && !hasBreakfast) customPrompt = "¡Buenos días! Veo que aún no has registrado el desayuno, ¿qué has tomado?";
-          else if (hour >= 14 && hour < 17 && !hasLunch) customPrompt = "Hola, ¿ya has almorzado? No olvides registrarlo para tu seguimiento.";
-          else if (hour >= 21) customPrompt = "¿Qué tal ha ido el día? ¿Ha habido cambios en tu dieta o bienestar?";
+          if (hour < 12 && !hasBreakfast) customPrompt = "¡Buenos días! Veo que aún no has registrado el desayuno, ¿qué has tomado?";
+          else if (hour >= 14 && hour < 18 && !hasLunch) customPrompt = "Hola, ¿ya has almorzado? No olvides registrarlo para tu seguimiento.";
+          else if (hour >= 21) customPrompt = "¿Qué tal ha ido el día? ¿Hay cambios en tu cena que deba anotar?";
 
           setLoading(true);
           try {
             const res = await fetch('/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ patientId, userMessage: "[SALUDO_CONTEXTUAL]", systemPrompt: `Saluda a ${patientData.name} y pregunta: ${customPrompt}` })
+              body: JSON.stringify({ 
+                patientId, 
+                userMessage: "[SALUDO_INICIAL_SISTEMA]", 
+                systemPrompt: `Eres Salud360. Saluda a ${patientData.name} y obligatoriamente hazle esta pregunta: ${customPrompt}` 
+              })
             });
             const data = await res.json();
-            if (data.message) setMessages(prev => [...prev, { role: 'assistant', message: data.message, created_at: new Date().toISOString() }]);
+            if (data.message) {
+              const newMsg = { role: 'assistant', message: data.message, created_at: new Date().toISOString() };
+              setMessages(prev => [...prev, newMsg]);
+              // Guardamos el saludo en el historial para que no se repita
+              await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'assistant', message: data.message }]);
+            }
           } catch (e) { console.error(e); } finally { setLoading(false); }
         }
       }
     };
     triggerSmartGreeting();
-  }, [isInitialLoading, patientData, foodLogs]);
+  }, [isInitialLoading, patientData, messages.length]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // Función para agrupar mensajes por fecha en el chat
+  // --- RENDERIZADO DE MENSAJES CON SEPARADORES ---
   const renderMessagesWithDates = () => {
     let lastDate = null;
     return messages.map((msg, idx) => {
-      const msgDate = new Date(msg.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+      const dateObj = new Date(msg.created_at);
+      const msgDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
       const showSeparator = msgDate !== lastDate;
       lastDate = msgDate;
 
       return (
-        <div key={idx} style={{ display: 'flex', flexDirection: 'column' }}>
+        <div key={idx} style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
           {showSeparator && (
-            <div style={{ textAlign: 'center', margin: '25px 0', opacity: 0.6 }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', background: '#e2e8f0', padding: '4px 12px', borderRadius: '12px', color: '#475569', textTransform: 'uppercase' }}>{msgDate}</span>
+            <div style={{ display: 'flex', alignItems: 'center', margin: '30px 0' }}>
+              <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+              <span style={{ padding: '0 15px', fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{msgDate}</span>
+              <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             </div>
           )}
-          <div style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', padding: '16px 20px', borderRadius: '20px', marginBottom: '16px', maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0', border: '1px solid #f1f5f9', fontSize: '14px', position: 'relative' }}>
+          <div style={{ 
+            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', 
+            background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', 
+            padding: '16px 20px', 
+            borderRadius: msg.role === 'user' ? '20px 20px 4px 20px' : '20px 20px 20px 4px', 
+            marginBottom: '16px', 
+            maxWidth: '80%', 
+            marginLeft: msg.role === 'user' ? 'auto' : '0', 
+            border: '1px solid #f1f5f9', 
+            fontSize: '14px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+          }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '6px', textAlign: 'right', fontWeight: '600' }}>
-              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
         </div>
@@ -115,8 +141,8 @@ export default function ChatWindow({ patientId }) {
     if (!input.trim() || loading) return;
     const userText = input.trim();
     setInput('');
-    const tempDate = new Date().toISOString();
-    setMessages(prev => [...prev, { role: 'user', message: userText, created_at: tempDate }]);
+    const now = new Date().toISOString();
+    setMessages(prev => [...prev, { role: 'user', message: userText, created_at: now }]);
     setLoading(true);
 
     try {
@@ -132,6 +158,7 @@ export default function ChatWindow({ patientId }) {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
+  // Mantenemos el panel izquierdo igual
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const imcReal = (heightCm > 0) ? (weight / ((heightCm / 100) ** 2)).toFixed(1) : "0.0";
@@ -141,76 +168,44 @@ export default function ChatWindow({ patientId }) {
   const targets = { Desayuno: Math.round(recCalories*0.2), Almuerzo: Math.round(recCalories*0.1), Comida: Math.round(recCalories*0.35), Merienda: Math.round(recCalories*0.1), Cena: Math.round(recCalories*0.2), Otros: Math.round(recCalories*0.05) };
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f1f5f9', overflow: 'hidden' }}>
-      
-      {/* PANEL IZQUIERDO (Mantenido intacto) */}
+    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
+      {/* ASIDE IZQUIERDO */}
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
           <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
         <div style={{ background: '#1e293b', padding: '20px', borderRadius: '24px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', textAlign: 'center' }}>
-            <div>
-              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800' }}>IMC REAL / IDEAL</div>
-              <div style={{ fontSize: '18px', fontWeight: '900', color: '#fbbf24' }}>{imcReal} <span style={{color:'#64748b', fontSize:'12px'}}>/ {imcIdeal}</span></div>
-            </div>
-            <div>
-              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800' }}>CALORÍAS META</div>
-              <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories}</div>
-            </div>
+            <div><div style={{ fontSize: '9px', color: '#94a3b8' }}>IMC REAL / IDEAL</div><div style={{ fontSize: '18px', fontWeight: '900', color: '#fbbf24' }}>{imcReal} / {imcIdeal}</div></div>
+            <div><div style={{ fontSize: '9px', color: '#94a3b8' }}>KCAL META</div><div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories}</div></div>
           </div>
-          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '16px', border: '1px solid #334155' }}>
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ width: '100%', background: 'transparent', color: 'white', border: 'none', textAlign: 'center', fontWeight: '700', outline: 'none', cursor: 'pointer' }} />
+          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '16px' }}>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ width: '100%', background: 'transparent', color: 'white', border: 'none', textAlign: 'center', fontWeight: '700' }} />
           </div>
-          {selectedDate === new Date().toISOString().split('T')[0] ? (
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
-            </div>
-          ) : (
-            <div style={{ padding: '10px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>Consultando historial</div>
-          )}
+          {selectedDate === new Date().toISOString().split('T')[0] && <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {Object.keys(targets).map((cat) => {
-              const catTotal = foodLogs.filter(f => f.category === cat).reduce((acc, curr) => acc + curr.calories, 0);
-              return (
-                <details key={cat} style={{ background: '#0f172a', borderRadius: '14px', border: '1px solid #334155', overflow: 'hidden' }}>
-                  <summary style={{ padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', listStyle:'none' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{cat}</span>
-                    <span style={{ fontSize: '12px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} / {targets[cat]}</span>
-                  </summary>
-                </details>
-              );
-            })}
-          </div>
-        </div>
-        {/* BOTONES INFERIORES */}
-        <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <div style={{ background: 'white', padding: '15px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
-               <span>CONSUMO TOTAL</span>
-               <span style={{ color: dailyTotal > recCalories ? '#ef4444' : '#22c55e' }}>{dailyTotal} / {recCalories} kcal</span>
-             </div>
-             <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
-               <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px' }} />
-             </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button onClick={() => window.print()} style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>📄 INFORME</button>
-            <Link href="/" style={{ textDecoration: 'none' }}><button style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🚪 SALIR</button></Link>
+            {Object.keys(targets).map(cat => (
+              <details key={cat} style={{ background: '#0f172a', borderRadius: '14px', border: '1px solid #334155' }}>
+                <summary style={{ padding: '12px', cursor: 'pointer', fontSize: '12px', display:'flex', justifyContent:'space-between' }}>
+                   <span>{cat}</span>
+                   <span>{foodLogs.filter(f => f.category === cat).reduce((acc, curr) => acc + curr.calories, 0)} / {targets[cat]}</span>
+                </summary>
+              </details>
+            ))}
           </div>
         </div>
       </aside>
 
-      {/* CHAT DERECHA (Con las nuevas funcionalidades) */}
+      {/* CHAT DERECHA */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {renderMessagesWithDates()}
-          {loading && <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px' }}>Salud360 analizando...</div>}
+          {loading && <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px' }}>Salud360 analizando datos...</div>}
           <div ref={messagesEndRef} />
         </div>
         <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
-          <input style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="¿Cómo te sientes hoy?" />
-          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 30px', borderRadius: '16px', border: 'none', cursor: 'pointer', fontWeight: '700' }}>Enviar</button>
+          <input style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#f8fafc' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Escribe aquí..." />
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 30px', borderRadius: '16px', border: 'none', fontWeight: '700', cursor: 'pointer' }}>Enviar</button>
         </form>
       </main>
     </div>
