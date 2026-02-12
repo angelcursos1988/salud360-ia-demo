@@ -6,9 +6,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import FoodTracker from './FoodTracker';
 
+// Importación dinámica optimizada
 const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
   ssr: false,
-  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '20px' }} />
+  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '12px' }}>Iniciando escaneo...</div>
 });
 
 export default function ChatWindow({ patientId }) {
@@ -24,15 +25,12 @@ export default function ChatWindow({ patientId }) {
   const loadAllData = async () => {
     if (!patientId) return;
     try {
-      // 1. Datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
-      // 2. Historial de chat
       const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
       if (cData) setMessages(cData);
 
-      // 3. Comidas de hoy
       const today = new Date().toISOString().split('T')[0];
       const { data: fData } = await supabase.from('food_logs').select('*').eq('patient_id', patientId).gte('created_at', today);
       
@@ -54,12 +52,9 @@ export default function ChatWindow({ patientId }) {
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const heightM = heightCm / 100;
-  
-  // Cálculo de IMC con protección contra división por cero
   const imcReal = heightM > 0 ? (weight / (heightM * heightM)).toFixed(1) : "0.0";
   const imcIdeal = 22.0;
   
-  // Harris-Benedict simplificado + 500 kcal (objetivo estándar)
   const recCalories = patientData 
     ? Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500) 
     : 2000; 
@@ -76,7 +71,6 @@ export default function ChatWindow({ patientId }) {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
-
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
@@ -98,15 +92,20 @@ export default function ChatWindow({ patientId }) {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  if (isInitialLoading) return <div style={{ padding: '20px', color: '#64748b' }}>Cargando perfil clínico...</div>;
-
+  // Eliminamos el return prematuro para que el layout se mantenga estable
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', background: '#f8fafc', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         
-        {/* VISUALIZADOR 3D */}
-        <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', marginBottom: '15px' }}>
-          <BiometricVisualizer patientData={patientData} />
+        {/* VISUALIZADOR 3D - Contenedor con altura reservada */}
+        <div style={{ height: '350px', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', marginBottom: '15px', background: '#020617' }}>
+          {!isInitialLoading && patientData ? (
+            <BiometricVisualizer patientData={patientData} />
+          ) : (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '12px' }}>
+              Cargando biometría...
+            </div>
+          )}
         </div>
 
         {/* WIDGET BIOMÉTRICO */}
@@ -164,7 +163,7 @@ export default function ChatWindow({ patientId }) {
         </div>
 
         {/* BARRA TOTAL INFERIOR */}
-        <div style={{ marginTop: '20px', padding: '18px', background: 'white', borderRadius: '20px', border: '2px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+        <div style={{ marginTop: '20px', padding: '18px', background: 'white', borderRadius: '20px', border: '2px solid #e2e8f0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: '800', fontSize: '13px', color: '#64748b' }}>CONSUMO TOTAL</span>
             <span style={{ fontWeight: '900', fontSize: '18px', color: dailyCalories > recCalories ? '#ef4444' : '#0f172a' }}>
@@ -176,7 +175,7 @@ export default function ChatWindow({ patientId }) {
               width: `${Math.min((dailyCalories / recCalories) * 100, 100)}%`, 
               height: '100%', 
               background: dailyCalories > recCalories ? '#ef4444' : '#22c55e',
-              transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
+              transition: 'width 0.8s ease'
             }} />
           </div>
         </div>
@@ -202,7 +201,6 @@ export default function ChatWindow({ patientId }) {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             </div>
           ))}
-          {loading && <div style={{ color: '#94a3b8', fontSize: '12px', paddingLeft: '20px' }}>IA procesando respuesta...</div>}
           <div ref={messagesEndRef} />
         </div>
 
@@ -210,10 +208,10 @@ export default function ChatWindow({ patientId }) {
           <input 
             style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }}
             value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Escribe un mensaje al asistente..."
+            placeholder="Escribe un mensaje..."
             disabled={loading}
           />
-          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>
             {loading ? '...' : 'Enviar'}
           </button>
         </form>
