@@ -124,96 +124,92 @@ export default function ChatWindow({ patientId }) {
   };
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f1f5f9', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         
-        {/* VISUALIZADOR */}
+        {/* VISUALIZADOR (MUÑECO) */}
         <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
           <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
 
-        {/* --- PANEL DE CONTROL OSCURO UNIFICADO --- */}
-        <div style={{ background: '#1e293b', padding: '18px', borderRadius: '20px', marginBottom: '15px', color: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}>
+        {/* --- CONTENEDOR PRINCIPAL DE DATOS --- */}
+        <div style={{ background: '#1e293b', padding: '20px', borderRadius: '24px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* MÉTRICAS PRINCIPALES */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', marginBottom: '18px' }}>
+          {/* MÉTRICAS */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', textAlign: 'center' }}>
             <div>
-              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em' }}>IMC ACTUAL / IDEAL</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em', marginBottom: '4px' }}>IMC REAL / IDEAL</div>
               <div style={{ fontSize: '18px', fontWeight: '900', color: '#fbbf24' }}>{imcReal} <span style={{color:'#64748b', fontSize:'12px'}}>/ {imcIdeal}</span></div>
             </div>
             <div>
-              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em' }}>OBJETIVO DIARIO</div>
-              <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories} <span style={{fontSize:'10px', color:'#64748b'}}>kcal</span></div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em', marginBottom: '4px' }}>CALORÍAS META</div>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories}</div>
             </div>
           </div>
-          
-          {/* SELECTOR DE FECHA INTEGRADO */}
-          <div style={{ borderTop: '1px solid #334155', paddingTop: '15px' }}>
-            <label style={{ fontSize: '9px', fontWeight: '800', color: '#94a3b8', display: 'block', marginBottom: '6px', textAlign: 'center' }}>FECHA DE REVISIÓN</label>
+
+          {/* CALENDARIO (Ajustado al ancho del recuadro) */}
+          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '16px', border: '1px solid #334155' }}>
+            <label style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', display: 'block', marginBottom: '6px', textAlign: 'center' }}>FECHA DE CONSULTA</label>
             <input 
               type="date" 
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #334155', background: '#0f172a', color: 'white', fontSize: '13px', fontWeight: '600', outline: 'none', textAlign: 'center', cursor: 'pointer' }}
+              style={{ width: '100%', padding: '8px', border: 'none', background: 'transparent', color: 'white', fontSize: '14px', fontWeight: '700', outline: 'none', textAlign: 'center', cursor: 'pointer' }}
             />
           </div>
 
-          {/* ESTADO DEL TRACKER (Solo visible en el panel oscuro) */}
-          <div style={{ marginTop: '15px' }}>
-            {selectedDate === new Date().toISOString().split('T')[0] ? (
-              <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '10px', borderRadius: '12px' }}>
-                <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
-              </div>
-            ) : (
-              <div style={{ padding: '12px', background: 'rgba(148, 163, 184, 0.1)', borderRadius: '12px', fontSize: '11px', color: '#94a3b8', textAlign: 'center', border: '1px dashed #334155' }}>
-                📅 Estás viendo el historial del día seleccionado
-              </div>
-            )}
-          </div>
-        </div>
+          {/* FOOD TRACKER INTEGRADO */}
+          {selectedDate === new Date().toISOString().split('T')[0] ? (
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+            </div>
+          ) : (
+            <div style={{ padding: '10px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>
+              Mostrando historial
+            </div>
+          )}
 
-        {/* DESGLOSE DE COMIDAS (Estilo limpio) */}
-        <div style={{ flex: 1 }}>
-          <h3 style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', marginBottom: '10px', paddingLeft: '5px' }}>DESGLOSE NUTRICIONAL</h3>
-          {Object.keys(targets).map((cat) => {
-            const catItems = foodLogs.filter(f => f.category === cat);
-            const catTotal = catItems.reduce((acc, curr) => acc + curr.calories, 0);
-            return (
-              <details key={cat} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '8px', overflow: 'hidden' }}>
-                <summary style={{ padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', listStyle:'none', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{cat}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} kcal</div>
-                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>Meta: {targets[cat]}</div>
+          {/* DESGLOSE NUTRICIONAL DENTRO DEL RECUADRO OSCURO */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Object.keys(targets).map((cat) => {
+              const catItems = foodLogs.filter(f => f.category === cat);
+              const catTotal = catItems.reduce((acc, curr) => acc + curr.calories, 0);
+              return (
+                <details key={cat} style={{ background: '#0f172a', borderRadius: '14px', border: '1px solid #334155', overflow: 'hidden' }}>
+                  <summary style={{ padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', listStyle:'none', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{cat}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} / {targets[cat]}</span>
+                  </summary>
+                  <div style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderTop:'1px solid #334155' }}>
+                    {catItems.length > 0 ? catItems.map((item, i) => (
+                      <div key={i} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i === catItems.length -1 ? 'none' : '1px solid rgba(255,255,255,0.05)' }}>
+                        <span style={{ color: '#94a3b8' }}>{item.description}</span>
+                        <span>{item.calories}</span>
+                      </div>
+                    )) : <div style={{fontSize:'10px', color:'#475569', textAlign:'center'}}>Sin registros</div>}
                   </div>
-                </summary>
-                <div style={{ padding: '12px', background: '#f8fafc', borderTop:'1px solid #f1f5f9' }}>
-                  {catItems.length > 0 ? catItems.map((item, i) => (
-                    <div key={i} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: i === catItems.length -1 ? 'none' : '1px solid #f1f5f9' }}>
-                      <span style={{ color: '#475569' }}>{item.description}</span>
-                      <span style={{ fontWeight: '700', color: '#1e293b' }}>{item.calories}</span>
-                    </div>
-                  )) : <div style={{fontSize:'10px', color:'#cbd5e1', fontStyle: 'italic'}}>No hay registros</div>}
-                </div>
-              </details>
-            );
-          })}
+                </details>
+              );
+            })}
+          </div>
         </div>
 
-        {/* PIE DE SIDEBAR CON BOTONES Y PROGRESO */}
-        <div style={{ background: 'white', padding: '15px', borderRadius: '20px', border: '1px solid #e2e8f0', marginTop: '15px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
-             <span>CONSUMO TOTAL</span>
-             <span style={{ color: dailyTotal > recCalories ? '#ef4444' : '#22c55e' }}>{dailyTotal} / {recCalories} kcal</span>
-          </div>
-          <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden', marginBottom: '15px' }}>
-             <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px', transition: 'width 0.3s ease' }} />
+        {/* --- PIE DE PÁGINA (RESUMEN Y BOTONES) --- */}
+        <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div style={{ background: 'white', padding: '15px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
+               <span>CONSUMO TOTAL</span>
+               <span style={{ color: dailyTotal > recCalories ? '#ef4444' : '#22c55e' }}>{dailyTotal} / {recCalories} kcal</span>
+             </div>
+             <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden' }}>
+               <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px' }} />
+             </div>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button onClick={() => window.print()} style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>📄 INFORME</button>
+            <button onClick={() => window.print()} style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>📄 INFORME</button>
             <Link href="/" style={{ textDecoration: 'none' }}>
-              <button style={{ width: '100%', padding: '10px', background: '#fff1f2', color: '#ef4444', border: 'none', borderRadius: '10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🚪 SALIR</button>
+              <button style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🚪 SALIR</button>
             </Link>
           </div>
         </div>
@@ -222,16 +218,16 @@ export default function ChatWindow({ patientId }) {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {messages.map((msg, idx) => (
-            <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', padding: '16px 20px', borderRadius: '20px', marginBottom: '16px', maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0', border: '1px solid #f1f5f9', fontSize: '14px', boxShadow: msg.role === 'user' ? 'none' : '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', padding: '16px 20px', borderRadius: '20px', marginBottom: '16px', maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0', border: '1px solid #f1f5f9', fontSize: '14px' }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             </div>
           ))}
-          {loading && <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px', animate: 'pulse' }}>Salud360 está pensando...</div>}
+          {loading && <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px' }}>Salud360 analizando...</div>}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px', background: 'white' }}>
-          <input style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="¿Cómo te sientes hoy? ¿Alguna duda sobre tu dieta?" />
-          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 30px', borderRadius: '16px', border: 'none', cursor: 'pointer', fontWeight: '700', transition: '0.2s' }}>Enviar</button>
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
+          <input style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Escribe aquí..." />
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 30px', borderRadius: '16px', border: 'none', cursor: 'pointer', fontWeight: '700' }}>Enviar</button>
         </form>
       </main>
     </div>
