@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/router';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 export default function MedicalDashboard() {
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [history, setHistory] = useState([]);
   const [challenges, setChallenges] = useState([]);
-  const [lastPlan, setLastPlan] = useState(""); // Estado para el menú IA
+  const [lastPlan, setLastPlan] = useState("");
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -18,7 +20,7 @@ export default function MedicalDashboard() {
     if (selectedPatient?.id) {
       fetchHistory(selectedPatient.id);
       fetchChallenges(selectedPatient.id);
-      fetchLastPlan(selectedPatient.id); // Nueva función
+      fetchLastPlan(selectedPatient.id);
     }
   }, [selectedPatient?.id]);
 
@@ -47,7 +49,6 @@ export default function MedicalDashboard() {
     setChallenges(data || []);
   };
 
-  // NUEVA FUNCIÓN: Recupera el último mensaje largo (menú) del chat
   const fetchLastPlan = async (id) => {
     const { data } = await supabase
       .from('chat_history')
@@ -57,10 +58,56 @@ export default function MedicalDashboard() {
       .order('created_at', { ascending: false });
 
     if (data) {
-      // Buscamos el primer mensaje que parezca un menú o tenga contenido extenso
       const plan = data.find(m => m.message.length > 200 || m.message.toLowerCase().includes('menú') || m.message.toLowerCase().includes('desayuno'));
       setLastPlan(plan ? plan.message : "No se ha generado un plan nutricional detallado todavía.");
     }
+  };
+
+  // --- LÓGICA DE GENERACIÓN DE INFORME PDF ---
+  const generatePDF = () => {
+    const doc = new jsPDF();
+    const date = new Date().toLocaleDateString();
+
+    // Título y Estilo
+    doc.setFontSize(20);
+    doc.setTextColor(39, 174, 96);
+    doc.text("Informe Clínico Salud360", 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Fecha de emisión: ${date}`, 14, 30);
+    doc.text(`ID Paciente: ${selectedPatient.id.substring(0, 8)}`, 14, 35);
+
+    // Tabla de Datos del Paciente
+    doc.autoTable({
+      startY: 40,
+      head: [['Concepto', 'Detalle']],
+      body: [
+        ['Nombre Completo', selectedPatient.name],
+        ['Edad', `${selectedPatient.age} años`],
+        ['Biometría', `${selectedPatient.height}cm | Sexo: ${selectedPatient.gender}`],
+        ['Estilo de Vida', `Actividad: ${selectedPatient.activity} | Dieta: ${selectedPatient.diet_type}`],
+        ['Alergias', selectedPatient.allergies || 'Ninguna conocida'],
+        ['Objetivo Principal', selectedPatient.health_goal]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [39, 174, 96] },
+      styles: { fontSize: 10 }
+    });
+
+    // Sección de Plan Nutricional
+    const finalY = doc.lastAutoTable.finalY + 15;
+    doc.setFontSize(14);
+    doc.setTextColor(30);
+    doc.text("Último Plan Nutricional Sugerido por IA", 14, finalY);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(50);
+    const splitPlan = doc.splitTextToSize(lastPlan, 180);
+    doc.text(splitPlan, 14, finalY + 10);
+
+    // Guardar el archivo
+    doc.save(`Informe_${selectedPatient.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const deletePatient = async (e, id) => {
@@ -104,7 +151,10 @@ export default function MedicalDashboard() {
                 <h1 style={{ fontSize: '24px', margin: 0 }}>{selectedPatient.name}</h1>
                 <p style={{ color: '#64748b', margin: 0 }}>{selectedPatient.age} años | {selectedPatient.height} cm</p>
               </div>
-              <button onClick={() => router.push('/')} style={{ padding: '10px 20px', borderRadius: '8px', background: '#27ae60', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Nueva Consulta</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={generatePDF} style={{ padding: '10px 20px', borderRadius: '8px', background: '#34495e', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>📄 Generar Informe</button>
+                <button onClick={() => router.push('/')} style={{ padding: '10px 20px', borderRadius: '8px', background: '#27ae60', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Nueva Consulta</button>
+              </div>
             </header>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '25px' }}>
@@ -144,7 +194,7 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
 
-                {/* NUEVO: BLOQUE DE PLAN NUTRICIONAL / MENÚ */}
+                {/* BLOQUE DE PLAN NUTRICIONAL / MENÚ EN UI */}
                 <div style={{ background: 'white', padding: '25px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#1e293b' }}>📋 Último Plan Nutricional Sugerido</h3>
                   <div style={{ 
