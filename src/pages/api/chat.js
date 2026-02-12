@@ -8,29 +8,26 @@ const supabase = createClient(
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
 
-  // 1. Recibimos el systemPrompt (que trae los datos del paciente) desde el componente
   const { userMessage, patientId, systemPrompt: patientContext } = req.body;
 
-  // 2. Definimos las reglas maestras de la IA (Tono y Retos)
-  const masterRules = `Eres el Especialista en Nutrición Digital de Salud360. 
-  Tu metodología es el pre-diagnóstico clínico seguido de retos progresivos.
+  // REGLAS MAESTRAS MEJORADAS: Quitamos la restricción de 2 frases para permitir contenido útil
+  const masterRules = `Eres el Especialista Principal en Salud360. 
+  Tu objetivo es transformar los datos biométricos del paciente en un plan de acción claro.
 
-  REGLAS DE RESPUESTA:
-  1. Respuestas BREVES (máximo 2-3 frases).
-  2. Tono: Profesional y motivador.
-  3. ESTRATEGIA: Usa los datos del paciente proporcionados para personalizar el consejo. 
-     Asigna SOLO UNO de los retos y pide al usuario que informe sus avances.
+  PROTOCOLO DE RESPUESTA:
+  1. ANALIZA: Empieza mencionando un dato específico del paciente (ej: su peso, su estrés o su dieta) para demostrar que lo conoces.
+  2. EDUCA: Explica brevemente CÓMO ese dato afecta su salud (contenido de valor).
+  3. ACCIÓN: Asigna un reto de la lista usando el formato [RETO: Nombre].
+  4. TONO: Empático, clínico y motivador. Máximo 150 palabras.
 
   LISTA DE RETOS DISPONIBLES:
   Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, 
   Desayuno proteico, Masticación consciente, Cero azúcares líquidos, Snack frutos secos, 
   Reducción de sal, Ayuno 12h.`;
 
-  // 3. Unimos las reglas maestras con los datos específicos del paciente
   const finalSystemPrompt = `${masterRules}\n\n${patientContext}`;
 
   try {
-    // 4. Llamada a Groq con todo el contexto
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -43,8 +40,8 @@ export default async function handler(req, res) {
           { role: "system", content: finalSystemPrompt },
           { role: "user", content: userMessage }
         ],
-        temperature: 0.6,
-        max_tokens: 250 // Un poco más de margen para que no corte la respuesta
+        temperature: 0.7, // Subimos un poco para que sea menos robótico
+        max_tokens: 500   // Damos espacio para contenido de calidad
       })
     });
 
@@ -53,15 +50,13 @@ export default async function handler(req, res) {
 
     const botContent = data.choices[0].message.content;
 
-    // 5. Guardar el intercambio en el historial de Supabase
-    const { error: dbError } = await supabase
+    // Guardar en historial (Nota: eliminamos el guardado de 'user' aquí si ya lo haces en el componente, 
+    // pero si no, este código es correcto para asegurar que todo se registre)
+    await supabase
       .from('chat_history')
       .insert([
-        { patient_id: patientId, role: 'user', message: userMessage },
         { patient_id: patientId, role: 'assistant', message: botContent }
       ]);
-
-    if (dbError) console.error("Error DB al guardar:", dbError.message);
 
     res.status(200).json({ message: botContent });
 

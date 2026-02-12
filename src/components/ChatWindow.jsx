@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 export default function ChatWindow({ patientId }) {
   const [messages, setMessages] = useState([]);
@@ -10,23 +8,28 @@ export default function ChatWindow({ patientId }) {
   const [patientData, setPatientData] = useState(null);
   const messagesEndRef = useRef(null);
 
+  // 1. CARGA DE DATOS E HISTORIAL
   useEffect(() => {
     const loadAllData = async () => {
       if (!patientId) return;
+      
+      // Datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
+      // Historial de chat real desde la DB
       const { data: cData } = await supabase
         .from('chat_history')
-        .select('role, message, created_at')
+        .select('role, message')
         .eq('patient_id', patientId)
         .order('created_at', { ascending: true });
 
-      if (cData && cData.length > 0) setMessages(cData);
-      else {
+      if (cData && cData.length > 0) {
+        setMessages(cData);
+      } else {
         setMessages([{
           role: 'assistant',
-          message: `Hola ${pData?.name || ''}. He analizado tus datos (Peso: ${pData?.weight}kg, Estrés: ${pData?.stress_level}/10). ¿En qué reto vamos a trabajar hoy?`
+          message: `Hola ${pData?.name || ''}. He analizado tu perfil (${pData?.diet_type}, actividad ${pData?.activity}). ¿Cómo te sientes con tus ${pData?.sleep_hours}h de sueño de anoche?`
         }]);
       }
     };
@@ -37,21 +40,20 @@ export default function ChatWindow({ patientId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // FUNCIÓN PARA GUARDAR EL RETO EN SUPABASE
-  const saveChallenge = async (challengeTitle) => {
-    try {
-      await supabase.from('challenges').insert([{
-        patient_id: patientId,
-        title: challengeTitle,
-        is_completed: false,
-        created_at: new Date().toISOString()
-      }]);
-      console.log("Reto guardado:", challengeTitle);
-    } catch (error) {
-      console.error("Error al guardar reto:", error);
-    }
+  // 2. GUARDAR RETOS Y MENSAJES EN LA DB
+  const saveToDB = async (role, text) => {
+    await supabase.from('chat_history').insert([
+      { patient_id: patientId, role, message: text }
+    ]);
   };
 
+  const saveChallenge = async (title) => {
+    await supabase.from('challenges').insert([
+      { patient_id: patientId, title, is_completed: false }
+    ]);
+  };
+
+  // 3. ENVÍO DE MENSAJES CON PROMPT AVANZADO
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
@@ -59,12 +61,25 @@ export default function ChatWindow({ patientId }) {
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
+    await saveToDB('user', userText); // Guardamos el mensaje del usuario
     setLoading(true);
 
     try {
+      // ESTE ES EL CEREBRO: El System Prompt
       const contextPrompt = `
-        PACIENTE: ${patientData?.name}. PESO: ${patientData?.weight}kg. ESTRÉS: ${patientData?.stress_level}/10. SUEÑO: ${patientData?.sleep_hours}h.
-        REGLA: Si detectas una necesidad, asigna un reto usando exactamente este formato: [RETO: Nombre del Reto]. Solo uno por vez.
+        Eres Salud360, un Asistente Médico y Coach de Bienestar experto.
+        CONTEXTO DEL PACIENTE:
+        - Nombre: ${patientData?.name}
+        - Perfil: ${patientData?.gender}, ${patientData?.age} años, Dieta ${patientData?.diet_type}.
+        - Actividad: ${patientData?.activity}.
+        - Datos de hoy: Peso ${patientData?.weight}kg, Estrés ${patientData?.stress_level}/10, Sueño ${patientData?.sleep_hours}h.
+
+        TAREA:
+        - Analiza si sus métricas son saludables para su nivel de actividad.
+        - Si el estrés es alto (>7), prioriza consejos de calma.
+        - Si es sedentario, motiva pequeños cambios.
+        - Sé empático pero profesional. Usa datos científicos.
+        - Para asignar un reto usa: [RETO: Nombre corto del reto].
       `;
 
       const response = await fetch('/api/chat', {
@@ -78,65 +93,72 @@ export default function ChatWindow({ patientId }) {
       });
 
       const data = await response.json();
-      let aiMessage = data.message;
+      let aiMessage = data.message || "Lo siento, mi conexión se ha interrumpido.";
 
-      // DETECTAR RETO CON REGEX
+      // Detección de retos
       const challengeMatch = aiMessage.match(/\[RETO:\s*(.*?)\]/);
       if (challengeMatch) {
         const challengeTitle = challengeMatch[1];
         await saveChallenge(challengeTitle);
-        // Opcional: Limpiar el tag de la respuesta para que no se vea feo
-        aiMessage = aiMessage.replace(challengeMatch[0], `🎯 **Nuevo Reto:** ${challengeTitle}`);
+        aiMessage = aiMessage.replace(challengeMatch[0], `\n\n🎯 **Nuevo Reto Asignado:** ${challengeTitle}`);
       }
 
       setMessages(prev => [...prev, { role: 'assistant', message: aiMessage }]);
+      await saveToDB('assistant', aiMessage); // Guardamos la respuesta de la IA
+
     } catch (error) {
-      console.error(error);
+      console.error("Error en la comunicación:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Renderizado del chat (estética Opción C)
+  // 4. DISEÑO VISUAL
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8fafc', fontFamily: 'sans-serif' }}>
-      <div style={{ padding: '16px 24px', background: 'white', borderBottom: '3px solid #27ae60', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '40px', height: '40px', background: '#27ae60', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>S360</div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '16px' }}>{patientData?.name || 'Cargando...'}</h2>
-            <span style={{ fontSize: '12px', color: '#27ae60' }}>● Especialista Activo</span>
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9', fontFamily: 'system-ui, sans-serif' }}>
+      {/* Header */}
+      <div style={{ padding: '15px 25px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ width: '45px', height: '45px', background: '#27ae60', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '20px' }}>S</div>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Especialista Salud360</h3>
+          <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>● En línea | Analizando perfil de {patientData?.name}</span>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+      {/* Área de mensajes */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
         {messages.map((msg, idx) => (
           <div key={idx} style={{
             alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
             background: msg.role === 'user' ? '#27ae60' : 'white',
-            color: msg.role === 'user' ? 'white' : '#1e293b',
-            padding: '12px 16px',
-            borderRadius: '15px',
-            maxWidth: '80%',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            border: msg.role === 'assistant' ? '1px solid #e2e8f0' : 'none'
+            color: msg.role === 'user' ? 'white' : '#334155',
+            padding: '12px 18px',
+            borderRadius: msg.role === 'user' ? '18px 18px 2px 18px' : '18px 18px 18px 2px',
+            maxWidth: '85%',
+            fontSize: '15px',
+            lineHeight: '1.5',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+            border: msg.role === 'assistant' ? '1px solid #e2e8f0' : 'none',
+            whiteSpace: 'pre-line' // Para que respete los saltos de línea
           }}>
             {msg.message}
           </div>
         ))}
-        {loading && <div style={{ color: '#94a3b8', fontSize: '12px' }}>IA analizando biométrica...</div>}
+        {loading && <div style={{ color: '#64748b', fontSize: '13px', fontStyle: 'italic' }}>Salud360 está procesando tus biométricas...</div>}
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSendMessage} style={{ padding: '20px', background: 'white', display: 'flex', gap: '10px' }}>
+      {/* Input de texto */}
+      <form onSubmit={handleSendMessage} style={{ padding: '20px', background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '12px' }}>
         <input 
-          style={{ flex: 1, padding: '12px 20px', borderRadius: '25px', border: '1px solid #e2e8f0', outline: 'none' }}
+          style={{ flex: 1, padding: '14px 20px', borderRadius: '15px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '15px', background: '#f8fafc' }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Habla con tu especialista..."
+          placeholder="Escribe tu duda o cómo te sientes..."
         />
-        <button type="submit" style={{ background: '#27ae60', color: 'white', border: 'none', padding: '0 20px', borderRadius: '25px', cursor: 'pointer', fontWeight: 'bold' }}>Enviar</button>
+        <button type="submit" style={{ background: '#27ae60', color: 'white', border: 'none', padding: '0 25px', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s' }}>
+          Enviar
+        </button>
       </form>
     </div>
   );
