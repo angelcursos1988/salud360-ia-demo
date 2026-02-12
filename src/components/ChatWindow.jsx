@@ -5,6 +5,7 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// Importación dinámica del visualizador
 const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
   ssr: false,
   loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '20px' }} />
@@ -17,17 +18,34 @@ export default function ChatWindow({ patientId }) {
   const [patientData, setPatientData] = useState(null);
   const messagesEndRef = useRef(null);
 
+  // Cargar datos del paciente e historial de chat
   useEffect(() => {
     const loadAllData = async () => {
       if (!patientId) return;
-      const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
+      
+      // 1. Traer datos biográficos y biométricos
+      const { data: pData } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('id', patientId)
+        .single();
+      
       if (pData) setPatientData(pData);
-      const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
+
+      // 2. Traer historial de mensajes
+      const { data: cData } = await supabase
+        .from('chat_history')
+        .select('role, message')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: true });
+      
       if (cData && cData.length > 0) setMessages(cData);
     };
+    
     loadAllData();
   }, [patientId]);
 
+  // Auto-scroll al último mensaje
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -35,33 +53,56 @@ export default function ChatWindow({ patientId }) {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
+
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
     setLoading(true);
 
     try {
+      // PREPARACIÓN DEL CONTEXTO: Inyectamos los datos de Supabase en el Prompt
+      const patientContext = patientData ? `
+        DATOS ACTUALES DEL PACIENTE:
+        - Nombre: ${patientData.name}
+        - Edad: ${patientData.age} años
+        - Sexo: ${patientData.gender}
+        - Peso: ${patientData.weight}kg
+        - Altura: ${patientData.height}cm
+        - Nivel de Actividad: ${patientData.activity_level || 'Moderado'}
+        - Objetivo de Salud: ${patientData.health_goal}
+        - Estrés: ${patientData.stress_level}/10
+      ` : "";
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           patientId, 
           userMessage: userText,
-          // PROMPT PARA CONTROLAR LA PARRAFADA Y FORZAR TABLAS
-          systemPrompt: `Eres un asistente clínico conciso. 
-          1. Responde de forma directa y breve (máximo 2-3 párrafos).
-          2. Si el usuario pide menús, rutinas o comparativas, usa SIEMPRE tablas de Markdown.
-          3. Evita introducciones largas.`
+          systemPrompt: `Eres un asistente clínico avanzado. 
+          ${patientContext}
+          
+          REGLAS DE RESPUESTA:
+          1. YA CONOCES los datos biométricos arriba indicados. NUNCA los preguntes.
+          2. Si te piden menús o rutinas, genera SIEMPRE tablas de Markdown con columnas claras.
+          3. Sé conciso y profesional. Máximo 2 párrafos de texto antes o después de una tabla.
+          4. Si falta un dato (como nivel de actividad), asume 'Moderado' basándote en el perfil clínico.`
         })
       });
+
       const data = await response.json();
-      setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
+      const aiMessage = data.message;
+
+      setMessages(prev => [...prev, { role: 'assistant', message: aiMessage }]);
+
+      // Guardar en Supabase para persistencia
       await supabase.from('chat_history').insert([
         { patient_id: patientId, role: 'user', message: userText }, 
-        { patient_id: patientId, role: 'assistant', message: data.message }
+        { patient_id: patientId, role: 'assistant', message: aiMessage }
       ]);
+
     } catch (error) { 
-      console.error(error); 
+      console.error("Error en el chat:", error); 
     } finally { 
       setLoading(false); 
     }
@@ -69,12 +110,8 @@ export default function ChatWindow({ patientId }) {
 
   const AchievementCard = ({ label, value, color, icon, detail }) => (
     <div style={{ 
-      background: 'white', 
-      padding: '16px', 
-      borderRadius: '16px', 
-      marginBottom: '12px', 
-      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
-      border: '1px solid #f1f5f9'
+      background: 'white', padding: '16px', borderRadius: '16px', marginBottom: '12px', 
+      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
         <div style={{ 
@@ -94,51 +131,45 @@ export default function ChatWindow({ patientId }) {
   );
 
   return (
-    <div style={{ display: 'flex', width: '100vw', height: '100vh', background: '#f8fafc', overflow: 'hidden', fontFamily: '"Inter", sans-serif' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100%', background: '#f8fafc', overflow: 'hidden' }}>
       
+      {/* PANEL LATERAL: VISUALIZADOR Y LOGROS */}
       <aside style={{ 
-        width: '400px', minWidth: '400px', background: '#f8fafc', 
-        borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', 
-        padding: '24px', height: '100vh', overflowY: 'auto' 
+        width: '400px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', 
+        display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' 
       }}>
         <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
           <BiometricVisualizer patientData={patientData} />
         </div>
 
         <div style={{ marginTop: '24px' }}>
-          <h4 style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', marginBottom: '16px', letterSpacing: '0.05em' }}>
-            ESTADO DE OBJETIVOS
-          </h4>
-          <AchievementCard label="Actividad Diaria" detail="Caminar 30 min" value={65} color="#3b82f6" icon="🏃" />
-          <AchievementCard label="Hidratación" detail="Consumo de agua" value={90} color="#0ea5e9" icon="💧" />
-          <AchievementCard label="Gestión de Estrés" detail="Ejercicios calma" value={42} color="#8b5cf6" icon="🧘" />
+          <h4 style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', marginBottom: '16px' }}>ESTADO DE OBJETIVOS</h4>
+          <AchievementCard label="Actividad" detail="Progreso semanal" value={patientData?.progress_activity || 0} color="#3b82f6" icon="🏃" />
+          <AchievementCard label="Hidratación" detail="Consumo diario" value={patientData?.progress_hydration || 0} color="#0ea5e9" icon="💧" />
+          <AchievementCard label="Calma" detail="Nivel de estrés" value={100 - (patientData?.progress_stress || 0)} color="#8b5cf6" icon="🧘" />
         </div>
 
-        <div style={{ marginTop: 'auto', paddingTop: '20px', display: 'flex', gap: '12px' }}>
-          <button onClick={() => window.print()} style={{ flex: 1, padding: '14px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>📄 Informe</button>
-          <Link href="/" style={{ flex: 1.5, textDecoration: 'none' }}>
-            <button style={{ width: '100%', padding: '14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '13px' }}>Finalizar Sesión</button>
+        <div style={{ marginTop: 'auto', display: 'flex', gap: '12px' }}>
+          <button onClick={() => window.print()} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>📄 Exportar</button>
+          <Link href="/dashboard" style={{ flex: 1 }}>
+            <button style={{ width: '100%', padding: '12px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Panel Médico</button>
           </Link>
         </div>
       </aside>
 
+      {/* ÁREA DE CHAT */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
-        <header style={{ padding: '20px 32px', borderBottom: '1px solid #f1f5f9' }}>
-          <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800' }}>Consulta Digital Inteligente</h3>
-        </header>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '32px', background: '#ffffff' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {messages.map((msg, idx) => (
             <div key={idx} style={{
               alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
               background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
               padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
               maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0',
-              border: '1px solid #f1f5f9',
+              border: msg.role === 'assistant' ? '1px solid #f1f5f9' : 'none',
               boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              fontSize: '14px', lineHeight: '1.6', color: '#1e293b'
+              fontSize: '14px'
             }}>
-              {/* RENDERIZADO CON SOPORTE PARA TABLAS */}
               <div className="markdown-container">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.message}
@@ -146,35 +177,24 @@ export default function ChatWindow({ patientId }) {
               </div>
             </div>
           ))}
-          {loading && <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '16px' }}>Analizando datos biométricos...</div>}
+          {loading && <div style={{ color: '#94a3b8', fontSize: '12px' }}>IA analizando biométricas...</div>}
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={handleSendMessage} style={{ padding: '24px 32px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
           <input 
-            style={{ flex: 1, padding: '16px 20px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }}
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }}
             value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Pide un menú saludable en una tabla..."
+            placeholder="Escribe aquí (ej: 'hazme un menú de 3 días')..."
           />
-          <button type="submit" style={{ background: '#0f172a', color: 'white', padding: '0 32px', borderRadius: '14px', fontWeight: '700' }}>Enviar</button>
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>Enviar</button>
         </form>
       </main>
 
       <style jsx global>{`
-        .markdown-container table {
-          border-collapse: collapse;
-          width: 100%;
-          margin: 10px 0;
-          font-size: 13px;
-        }
-        .markdown-container th, .markdown-container td {
-          border: 1px solid #e2e8f0;
-          padding: 8px;
-          text-align: left;
-        }
-        .markdown-container th {
-          background-color: #f8fafc;
-        }
+        .markdown-container table { border-collapse: collapse; width: 100%; margin: 15px 0; border: 1px solid #e2e8f0; }
+        .markdown-container th, .markdown-container td { padding: 10px; border: 1px solid #e2e8f0; text-align: left; }
+        .markdown-container th { background: #f8fafc; font-weight: 700; }
       `}</style>
     </div>
   );
