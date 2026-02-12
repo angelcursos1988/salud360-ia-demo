@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/router';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import dynamic from 'next/dynamic';
-import Link from 'next/link'; // Importación necesaria para la navegación
+import Link from 'next/link'; 
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
@@ -65,7 +65,6 @@ export default function MedicalDashboard() {
     }
   };
 
-  // ACTUALIZAR PROGRESO BIOMÉTRICO
   const updateBiometricProgress = async (field, value) => {
     const newValue = parseInt(value);
     const { error } = await supabase
@@ -110,7 +109,6 @@ export default function MedicalDashboard() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', height: '100vh', fontFamily: 'Inter, sans-serif', background: '#f8fafc' }}>
       
-      {/* SIDEBAR CON MINI-HOLOGRAMAS */}
       <aside style={{ background: 'white', borderRight: '1px solid #e2e8f0', overflowY: 'auto', padding: '20px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '24px', color: '#0f172a' }}>🩺 Pacientes</h2>
         {patients.map(p => (
@@ -147,8 +145,8 @@ export default function MedicalDashboard() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={generatePDF} style={{ padding: '12px 24px', borderRadius: '12px', background: '#0f172a', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '700' }}>📄 PDF</button>
                 
-                {/* CORRECCIÓN: Link dinámico para abrir el chat */}
-                <Link href={`/chat/${selectedPatient.id}`} passHref>
+                {/* CAMBIO CLAVE AQUÍ: Usamos el objeto de ruta para pasar el ID como query param */}
+                <Link href={{ pathname: '/chat', query: { id: selectedPatient.id } }} passHref>
                   <button style={{ padding: '12px 24px', borderRadius: '12px', background: '#22c55e', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '700' }}>
                     💬 Abrir Chat
                   </button>
@@ -158,8 +156,6 @@ export default function MedicalDashboard() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                
-                {/* PANEL DE CONTROL DE PROGRESO */}
                 <div style={{ background: 'white', padding: '25px', borderRadius: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800' }}>🎛️ Control de Objetivos Reales</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
@@ -184,7 +180,6 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
 
-                {/* GRÁFICA */}
                 <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800' }}>📈 Histórico de Peso</h3>
                   <div style={{ width: '100%', height: '250px' }}>
@@ -202,7 +197,6 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
 
-                {/* PLAN NUTRICIONAL */}
                 <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
                   <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', fontWeight: '800' }}>📋 Plan Actual</h3>
                   <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-line', color: '#334155' }}>
@@ -211,7 +205,6 @@ export default function MedicalDashboard() {
                 </div>
               </div>
 
-              {/* COLUMNA DERECHA: RETOS */}
               <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800' }}>🎯 Checkbox de Retos</h3>
                 {challenges.length > 0 ? challenges.map(c => (
@@ -224,7 +217,6 @@ export default function MedicalDashboard() {
                   </div>
                 )) : <p style={{ color: '#94a3b8', fontSize: '13px' }}>No hay retos asignados.</p>}
               </div>
-
             </div>
           </div>
         ) : <div style={{textAlign: 'center', marginTop: '100px', color: '#94a3b8'}}>Selecciona un paciente para comenzar.</div>}
