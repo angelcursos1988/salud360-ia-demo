@@ -1,3 +1,58 @@
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import FoodTracker from './FoodTracker';
+
+const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
+  ssr: false,
+  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '24px' }} />
+});
+
+export default function ChatWindow({ patientId }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [patientData, setPatientData] = useState(null);
+  const [foodLogs, setFoodLogs] = useState([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [hasGreeted, setHasGreeted] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const messagesEndRef = useRef(null);
+
+  const loadAllData = async () => {
+    if (!patientId) return;
+    try {
+      const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
+      if (pData) setPatientData(pData);
+
+      const { data: cData } = await supabase.from('chat_history').select('role, message')
+        .eq('patient_id', patientId).order('created_at', { ascending: true });
+      if (cData) setMessages(cData);
+
+      const startOfDay = `${selectedDate}T00:00:00.000Z`;
+      const endOfDay = `${selectedDate}T23:59:59.999Z`;
+
+      const { data: fData } = await supabase.from('food_logs').select('*')
+        .eq('patient_id', patientId).gte('created_at', startOfDay).lte('created_at', endOfDay);
+      
+      if (fData) setFoodLogs(fData);
+    } catch (err) { console.error(err); } finally { setIsInitialLoading(false); }
+  };
+
+  useEffect(() => { loadAllData(); }, [patientId, selectedDate]);
+
+  useEffect(() => {
+    const triggerGreeting = async () => {
+      if (!isInitialLoading && patientData && !hasGreeted) {
+        setHasGreeted(true);
+        const today = new Date().toISOString().split('T')[0];
+        const { data: lastMsg } = await supabase.from('chat_history').select('created_at')
+          .eq('patient_id', patientId).order('created_at', { descending: true }).limit(1);
+
+        if (!lastMsg?.[0] || lastMsg[0].created_at.split('T')[0] !== today) {
           setLoading(true);
           try {
             const res = await fetch('/api/chat', {
