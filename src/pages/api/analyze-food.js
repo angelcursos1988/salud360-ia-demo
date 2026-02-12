@@ -3,15 +3,14 @@ export default async function handler(req, res) {
 
   const { foodText } = req.body;
 
-  // 1. Verificación de API Key
+  // DEBUG: Si no hay API KEY, devolvemos un error claro para que lo veas en la consola
   if (!process.env.OPENAI_API_KEY) {
-    console.error("ERROR: Falta OPENAI_API_KEY en variables de entorno");
-    return res.status(500).json({ error: "Configuración del servidor incompleta (API Key)" });
+    console.error("FALTA API KEY");
+    return res.status(500).json({ 
+      error: "Error de configuración", 
+      details: "La clave de OpenAI no está configurada en el servidor." 
+    });
   }
-
-  const prompt = `Analiza: "${foodText}". 
-  Responde UNICAMENTE un objeto JSON con este formato:
-  {"calories": 300, "nutrients": {"proteinas": "10g", "carbohidratos": "20g", "grasas": "5g"}}`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -23,34 +22,26 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: "Eres un asistente que solo responde en JSON puro." },
-          { role: "user", content: prompt }
+          { role: "system", content: "Eres un nutricionista que solo responde en JSON." },
+          { role: "user", content: `Analiza "${foodText}" y responde solo JSON: {"calories": número, "nutrients": {"proteinas": "Xg", "carbohidratos": "Xg", "grasas": "Xg"}}` }
         ],
         temperature: 0
       })
     });
 
     const data = await response.json();
-    
-    if (!data.choices || data.choices.length === 0) {
-      throw new Error("OpenAI no devolvió resultados");
+
+    // Si OpenAI devuelve error (ej: clave inválida o cuota agotada)
+    if (data.error) {
+      console.error("Error de OpenAI:", data.error);
+      return res.status(500).json({ error: "OpenAI falló", details: data.error.message });
     }
 
-    let rawContent = data.choices[0].message.content.trim();
-    
-    // 2. Limpiador de JSON (Elimina posibles backticks o texto extra)
-    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta");
-    
-    const cleanJson = JSON.parse(jsonMatch[0]);
-
-    res.status(200).json({
-      calories: cleanJson.calories || 0,
-      nutrients: cleanJson.nutrients || {}
-    });
+    const cleanJson = JSON.parse(data.choices[0].message.content.trim());
+    res.status(200).json(cleanJson);
 
   } catch (error) {
-    console.error("API Error:", error.message);
-    res.status(500).json({ error: "Error en el análisis", details: error.message });
+    // Si el JSON.parse falla o hay un error de red
+    res.status(500).json({ error: "Fallo en el proceso", details: error.message });
   }
 }
