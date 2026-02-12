@@ -3,104 +3,185 @@ import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabase';
 
 export default function Home() {
+  const [step, setStep] = useState('login'); 
   const [name, setName] = useState('');
+  const [patientId, setPatientId] = useState(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleStart = async (e) => {
-    e.preventDefault();
-    if (!name.trim() || !supabase) return;
+  const [formData, setFormData] = useState({
+    age: '', height: '', weight: '', sleep_hours: '',
+    stress_level: '5', diet_type: 'omnivoro', gender: 'otro',
+    activity: 'moderado', health_goal: 'estar saludable', 
+    allergies: '', medical_conditions: ''
+  });
 
+  const handleCheckUser = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
     setLoading(true);
+
     try {
-      // 1. Buscamos si el paciente ya existe (el más reciente)
-      let { data: patient, error: searchError } = await supabase
+      let { data: patient, error } = await supabase
         .from('patients')
-        .select('id')
+        .select('*')
         .eq('name', name.trim())
-        .order('created_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
 
-      if (searchError) throw searchError;
+      if (patient) {
+        // --- LÓGICA DE SALTO DIRECTO ---
+        // Si el usuario ya tiene datos base (edad y altura), lo mandamos directo al chat
+        if (patient.age && patient.height) {
+          router.push(`/chat?id=${patient.id}`);
+          return; // Salimos de la función para evitar el cambio de step
+        }
 
-      // 2. Si no existe, lo creamos
-      if (!patient) {
-        const { data: newPatient, error: createError } = await supabase
+        // Si existe pero le faltan datos base, vamos al onboarding
+        setPatientId(patient.id);
+        setFormData({
+          ...formData,
+          age: patient.age || '',
+          height: patient.height || '',
+          gender: patient.gender || 'otro',
+          activity: patient.activity || 'moderado',
+          diet_type: patient.diet_type || 'omnivoro',
+          health_goal: patient.health_goal || 'estar saludable',
+        });
+        setStep('onboarding'); 
+      } else {
+        // Si no existe en absoluto, onboarding total
+        setStep('onboarding');
+      }
+    } catch (error) {
+      console.error("Error al buscar usuario:", error);
+    } finally {
+      if (step === 'login') setLoading(false);
+    }
+  };
+
+  const handleSaveData = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      let currentId = patientId;
+
+      const dataToSave = {
+        name: name.trim(),
+        age: parseInt(formData.age) || 0,
+        height: parseInt(formData.height) || 0,
+        weight: parseFloat(formData.weight) || 0,
+        sleep_hours: parseInt(formData.sleep_hours) || 0,
+        stress_level: parseInt(formData.stress_level) || 5,
+        diet_type: formData.diet_type || 'omnivoro',
+        gender: formData.gender,
+        activity: formData.activity,
+        health_goal: formData.health_goal || 'bienestar',
+        allergies: formData.allergies || '',
+        medical_conditions: formData.medical_conditions || '',
+        updated_at: new Date().toISOString()
+      };
+
+      if (!patientId) {
+        // Inserción nueva
+        const { data: newP, error: insertError } = await supabase
           .from('patients')
-          .insert([{ name: name.trim() }])
+          .insert([dataToSave])
           .select()
           .single();
-        
-        if (createError) throw createError;
-        patient = newPatient;
+        if (insertError) throw insertError;
+        currentId = newP.id;
+      } else {
+        // Actualización
+        const { error: updateError } = await supabase
+          .from('patients')
+          .update(dataToSave)
+          .eq('id', patientId);
+        if (updateError) throw updateError;
       }
 
-      // 3. Redirigir al chat del paciente
-      router.push(`/chat?id=${patient.id}`);
+      // Registro en el historial
+      await supabase.from('health_logs').insert([{
+        patient_id: currentId,
+        weight: parseFloat(formData.weight) || 0,
+        stress_level: parseInt(formData.stress_level) || 5,
+        sleep_hours: parseInt(formData.sleep_hours) || 0
+      }]);
+
+      router.push(`/chat?id=${currentId}`);
     } catch (error) {
-      console.error("Error al acceder:", error);
-      alert("Error al cargar el perfil.");
+      console.error("Error crítico:", error);
+      alert("Error al guardar: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={{ 
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-      height: '100vh', background: '#f4f7f6', fontFamily: 'sans-serif' 
-    }}>
-      <div style={{ 
-        background: 'white', padding: '40px', borderRadius: '15px', 
-        boxShadow: '0 4px 15px rgba(0,0,0,0.1)', textAlign: 'center', 
-        maxWidth: '400px', width: '90%' 
-      }}>
-        <img src="/logo.jpg" alt="Salud360" style={{ width: '80px', marginBottom: '20px', borderRadius: '12px' }} />
-        <h1 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '24px' }}>Salud360 Nutrición</h1>
-        <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Tu plan de salud personalizado</p>
-        
-        <form onSubmit={handleStart} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <input
-            type="text"
-            placeholder="Introduce tu nombre completo"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            style={{ 
-              padding: '12px', borderRadius: '8px', border: '1px solid #ddd', 
-              fontSize: '16px', outline: 'none' 
-            }}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            style={{ 
-              padding: '12px', borderRadius: '8px', border: 'none', 
-              background: '#27ae60', color: 'white', fontWeight: 'bold', 
-              cursor: 'pointer', fontSize: '16px' 
-            }}
-          >
-            {loading ? 'Entrando...' : 'Entrar a mi Plan'}
-          </button>
-        </form>
+  const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-        {/* --- SECCIÓN RECUPERADA PARA MÉDICOS --- */}
-        <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
-          <p style={{ fontSize: '14px', color: '#95a5a6', marginBottom: '10px' }}>¿Eres personal sanitario?</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            style={{ 
-              background: 'none', border: '1px solid #2c3e50', color: '#2c3e50',
-              padding: '8px 20px', borderRadius: '6px', cursor: 'pointer',
-              fontSize: '13px', fontWeight: '500', transition: 'all 0.3s'
-            }}
-            onMouseOver={(e) => { e.target.style.background = '#2c3e50'; e.target.style.color = 'white'; }}
-            onMouseOut={(e) => { e.target.style.background = 'none'; e.target.style.color = '#2c3e50'; }}
-          >
-            Acceso Médicos
-          </button>
-        </div>
+  // Estilos (se mantienen igual que los tuyos)
+  const cardStyle = { background: 'white', padding: '40px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', width: '100%', maxWidth: '450px' };
+  const inputStyle = { width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '15px', outline: 'none', background: '#f8fafc' };
+  const btnStyle = { width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: '#27ae60', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' };
+  const labelStyle = { fontSize: '12px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '5px' };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '20px', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={cardStyle}>
+        {step === 'login' && (
+          <form onSubmit={handleCheckUser}>
+            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+              <div style={{ width: '60px', height: '60px', background: '#27ae60', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '24px', margin: '0 auto 15px' }}>S360</div>
+              <h1 style={{ color: '#1e293b', margin: 0, fontSize: '24px' }}>Salud360</h1>
+              <p style={{ color: '#64748b', fontSize: '14px' }}>Tu asistente de salud inteligente</p>
+            </div>
+            <input style={inputStyle} type="text" placeholder="Tu nombre completo" value={name} onChange={(e) => setName(e.target.value)} required />
+            <button style={btnStyle}>{loading ? 'Verificando...' : 'Entrar'}</button>
+            <p onClick={() => router.push('/dashboard')} style={{ textAlign: 'center', color: '#64748b', cursor: 'pointer', marginTop: '25px', fontSize: '13px', fontWeight: '500' }}>Acceso facultativos →</p>
+          </form>
+        )}
+
+        {step === 'onboarding' && (
+          <form onSubmit={handleSaveData}>
+            <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '20px' }}>Configurar Perfil</h2>
+            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '25px' }}>Solo necesitamos estos datos una vez.</p>
+            
+            <div style={{display: 'flex', gap: '10px'}}>
+              <div style={{flex: 1}}>
+                <label style={labelStyle}>Edad</label>
+                <input name="age" type="number" style={inputStyle} value={formData.age} onChange={handleInputChange} required />
+              </div>
+              <div style={{flex: 1}}>
+                <label style={labelStyle}>Altura (cm)</label>
+                <input name="height" type="number" style={inputStyle} value={formData.height} onChange={handleInputChange} required />
+              </div>
+            </div>
+
+            <label style={labelStyle}>Peso Actual (kg)</label>
+            <input name="weight" type="number" step="0.1" style={inputStyle} value={formData.weight} onChange={handleInputChange} required />
+            
+            <label style={labelStyle}>Horas de sueño</label>
+            <input name="sleep_hours" type="number" style={inputStyle} value={formData.sleep_hours} onChange={handleInputChange} required />
+
+            <label style={labelStyle}>Nivel de actividad</label>
+            <select name="activity" style={inputStyle} onChange={handleInputChange} value={formData.activity}>
+              <option value="sedentario">Sedentario</option>
+              <option value="moderado">Moderado</option>
+              <option value="activo">Activo</option>
+              <option value="atleta">Atleta</option>
+            </select>
+
+            <label style={labelStyle}>Tipo de dieta</label>
+            <select name="diet_type" style={inputStyle} onChange={handleInputChange} value={formData.diet_type}>
+              <option value="omnivoro">Omnívoro</option>
+              <option value="vegetariano">Vegetariano</option>
+              <option value="vegano">Vegano</option>
+              <option value="keto">Keto</option>
+            </select>
+
+            <button style={btnStyle}>{loading ? 'Guardando...' : 'Comenzar experiencia'}</button>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -9,13 +9,21 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@react-three/drei": "^9.105.4",
+    "@react-three/fiber": "^8.17.10",
     "@supabase/supabase-js": "^2.39.7",
+    "@types/three": "^0.182.0",
     "groq-sdk": "^0.3.0",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "next": "^14.0.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-is": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.7.0",
+    "remark-gfm": "^4.0.1",
+    "three": "^0.160.0"
   }
 }

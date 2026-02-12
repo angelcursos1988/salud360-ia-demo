@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { generatePatientReport } from '../lib/reportGenerator';
+import Link from 'next/link'; // Importante para la navegación
 
 export default function Dashboard() {
   const [patients, setPatients] = useState([]);
@@ -47,7 +48,6 @@ export default function Dashboard() {
     try {
       console.log("Consultando tabla chat_history para el paciente:", patient.id);
       
-      // CAMBIO CLAVE: Usamos 'chat_history' en lugar de 'messages'
       const { data: messages, error } = await supabase
         .from('chat_history') 
         .select('*')
@@ -128,10 +128,18 @@ export default function Dashboard() {
                     <span>{p.avatars[0].health < 50 ? '🤒' : '😊'} {p.avatars[0].health}%</span>
                   ) : '—'}
                 </td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, display: 'flex', gap: '8px' }}>
+                  {/* BOTÓN DESCARGAR PDF */}
                   <button onClick={() => downloadReport(p)} style={downloadButtonStyle}>
-                    📥 Descargar PDF
+                    📥 Informe
                   </button>
+
+                  {/* BOTÓN ABRIR CHAT (OPCIÓN B) */}
+                  <Link href={{ pathname: '/chat', query: { id: p.id } }} passHref>
+                    <button style={chatButtonStyle}>
+                      💬 Chat
+                    </button>
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -142,7 +150,7 @@ export default function Dashboard() {
   );
 }
 
-// Estilos rápidos
+// Estilos
 const cardStyle = { background: 'white', padding: '20px', borderRadius: '10px', border: '1px solid #eee' };
 const cardLabelStyle = { fontSize: '12px', color: '#7f8c8d', margin: '0 0 5px 0', textTransform: 'uppercase' };
 const cardValueStyle = { fontSize: '32px', fontWeight: 'bold', margin: 0 };
@@ -151,3 +159,4 @@ const tdStyle = { padding: '15px' };
 const primaryButtonStyle = { padding: '10px 20px', background: '#3498db', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' };
 const secondaryButtonStyle = { padding: '10px 20px', background: 'white', border: '1px solid #ddd', borderRadius: '5px', cursor: 'pointer' };
 const downloadButtonStyle = { padding: '6px 12px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
+const chatButtonStyle = { padding: '6px 12px', background: '#8e44ad', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
