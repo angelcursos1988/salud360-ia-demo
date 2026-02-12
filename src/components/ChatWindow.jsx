@@ -19,23 +19,45 @@ export default function ChatWindow({ patientId }) {
   const [foodLogs, setFoodLogs] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasGreeted, setHasGreeted] = useState(false);
+  
+  // NUEVO: Estado para la fecha seleccionada (por defecto hoy)
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
   const messagesEndRef = useRef(null);
 
   const loadAllData = async () => {
     if (!patientId) return;
     try {
+      // 1. Datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
+      // 2. Historial de chat (todos los mensajes)
       const { data: cData } = await supabase.from('chat_history').select('role, message')
         .eq('patient_id', patientId).order('created_at', { ascending: true });
       if (cData) setMessages(cData);
 
-      const today = new Date().toISOString().split('T')[0];
-      const { data: fData } = await supabase.from('food_logs').select('*').eq('patient_id', patientId).gte('created_at', today);
+      // 3. Cargar logs de comida filtrados por la FECHA SELECCIONADA
+      const startOfDay = `${selectedDate}T00:00:00.000Z`;
+      const endOfDay = `${selectedDate}T23:59:59.999Z`;
+
+      const { data: fData } = await supabase
+        .from('food_logs')
+        .select('*')
+        .eq('patient_id', patientId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+      
       if (fData) setFoodLogs(fData);
-    } catch (err) { console.error(err); } finally { setIsInitialLoading(false); }
+    } catch (err) { 
+      console.error("Error cargando datos:", err); 
+    } finally { 
+      setIsInitialLoading(false); 
+    }
   };
+
+  // Recargar datos cuando cambie la fecha o el ID del paciente
+  useEffect(() => { loadAllData(); }, [patientId, selectedDate]);
 
   useEffect(() => {
     const triggerGreeting = async () => {
@@ -62,7 +84,6 @@ export default function ChatWindow({ patientId }) {
     triggerGreeting();
   }, [isInitialLoading, patientData]);
 
-  useEffect(() => { loadAllData(); }, [patientId]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const handleSendMessage = async (e) => {
@@ -82,6 +103,7 @@ export default function ChatWindow({ patientId }) {
       });
       const data = await response.json();
       let aiText = data.message || "Error.";
+      
       const updateMatch = aiText.match(/\[UPDATE:(.*?)\]/);
       if (updateMatch) {
         const updates = {};
@@ -91,6 +113,8 @@ export default function ChatWindow({ patientId }) {
         });
         if (Object.keys(updates).length > 0) {
           await supabase.from('patients').update(updates).eq('id', patientId);
+          // Insertamos log de salud con la fecha actual
+          await supabase.from('health_logs').insert([{ patient_id: patientId, ...updates }]);
           loadAllData();
         }
       }
@@ -99,7 +123,7 @@ export default function ChatWindow({ patientId }) {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // LÓGICA NUTRICIONAL COMPLETA
+  // Lógica nutricional
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const imcReal = (heightCm > 0) ? (weight / ((heightCm / 100) ** 2)).toFixed(1) : "0.0";
@@ -119,11 +143,22 @@ export default function ChatWindow({ patientId }) {
   return (
     <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
+        
+        {/* SELECTOR DE FECHA */}
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', display: 'block', marginBottom: '5px' }}>FECHA DE CONSULTA</label>
+          <input 
+            type="date" 
+            value={selectedDate} 
+            onChange={(e) => setSelectedDate(e.target.value)}
+            style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '14px', fontWeight: '600', color: '#1e293b', outline: 'none' }}
+          />
+        </div>
+
         <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
           <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
 
-        {/* WIDGET IMC Y CALORÍAS */}
         <div style={{ background: '#1e293b', padding: '18px', borderRadius: '20px', marginBottom: '15px', color: 'white' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center' }}>
             <div>
@@ -137,9 +172,15 @@ export default function ChatWindow({ patientId }) {
           </div>
         </div>
 
-        <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+        {/* Solo permitimos añadir comida si la fecha seleccionada es HOY */}
+        {selectedDate === new Date().toISOString().split('T')[0] ? (
+          <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+        ) : (
+          <div style={{ padding: '12px', background: '#f1f5f9', borderRadius: '12px', fontSize: '12px', color: '#64748b', textAlign: 'center', marginBottom: '10px' }}>
+            Modo lectura (Historial)
+          </div>
+        )}
 
-        {/* DESPLEGABLE DE COMIDAS */}
         <div style={{ marginTop: '15px' }}>
           {Object.keys(targets).map((cat) => {
             const catItems = foodLogs.filter(f => f.category === cat);
@@ -151,19 +192,18 @@ export default function ChatWindow({ patientId }) {
                   <span style={{ fontSize: '13px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} / {targets[cat]}</span>
                 </summary>
                 <div style={{ padding: '10px', background: '#f8fafc', borderTop:'1px solid #eee' }}>
-                  {catItems.map((item, i) => (
+                  {catItems.length > 0 ? catItems.map((item, i) => (
                     <div key={i} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                       <span>{item.description}</span>
                       <span>{item.calories} kcal</span>
                     </div>
-                  ))}
+                  )) : <div style={{fontSize:'10px', color:'#94a3b8'}}>No hay registros</div>}
                 </div>
               </details>
             );
           })}
         </div>
 
-        {/* BOTONES ACCIÓN */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
           <button onClick={() => window.print()} style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>📄 Informe</button>
           <Link href="/" style={{ textDecoration: 'none' }}>
@@ -171,9 +211,11 @@ export default function ChatWindow({ patientId }) {
           </Link>
         </div>
 
-        {/* BARRA CONSUMIDO */}
         <div style={{ marginTop: '20px', padding: '15px', background: 'white', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '800' }}><span>DIETA TOTAL</span><span>{dailyTotal} / {recCalories}</span></div>
+           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '800' }}>
+             <span>RESUMEN DÍA</span>
+             <span>{dailyTotal} / {recCalories} kcal</span>
+           </div>
            <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '10px', marginTop: '8px' }}>
              <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px' }} />
            </div>
