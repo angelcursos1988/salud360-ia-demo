@@ -25,18 +25,15 @@ export default function ChatWindow({ patientId }) {
   const loadAllData = async () => {
     if (!patientId) return;
     try {
-      // Cargamos datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
-      // Cargamos historial de chat
       const { data: cData } = await supabase.from('chat_history')
         .select('role, message, created_at')
         .eq('patient_id', patientId)
         .order('created_at', { ascending: true });
       if (cData) setMessages(cData);
 
-      // Cargamos comidas de la fecha seleccionada
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
       const endOfDay = `${selectedDate}T23:59:59.999Z`;
       const { data: fData } = await supabase.from('food_logs').select('*')
@@ -48,7 +45,6 @@ export default function ChatWindow({ patientId }) {
 
   useEffect(() => { loadAllData(); }, [patientId, selectedDate]);
 
-  // --- SALUDO INTELIGENTE ---
   useEffect(() => {
     const triggerSmartGreeting = async () => {
       if (!isInitialLoading && patientData && !hasGreeted) {
@@ -56,11 +52,9 @@ export default function ChatWindow({ patientId }) {
         const now = new Date();
         const hour = now.getHours();
         const todayStr = now.toLocaleDateString('es-ES');
-
         const lastMsg = messages[messages.length - 1];
         const lastMsgDate = lastMsg ? new Date(lastMsg.created_at).toLocaleDateString('es-ES') : null;
 
-        // Si el último mensaje NO es de hoy, saludamos
         if (lastMsgDate !== todayStr) {
           let customPrompt = "¿En qué puedo ayudarte hoy?";
           const hasBreakfast = foodLogs.some(f => f.category === 'Desayuno');
@@ -83,7 +77,6 @@ export default function ChatWindow({ patientId }) {
             });
             const data = await res.json();
             if (data.message) {
-               // FILTRO PARA SALUDO: Borra los corchetes [UPDATE...]
                const cleanGreeting = data.message.replace(/\[.*?\]/g, '').trim();
                const newMsg = { role: 'assistant', message: cleanGreeting, created_at: new Date().toISOString() };
                setMessages(prev => [...prev, newMsg]);
@@ -98,7 +91,6 @@ export default function ChatWindow({ patientId }) {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // --- RENDERIZADO CHAT ---
   const renderMessagesWithDates = () => {
     let lastDate = null;
     return messages.map((msg, idx) => {
@@ -106,7 +98,6 @@ export default function ChatWindow({ patientId }) {
       const msgDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
       const showSeparator = msgDate !== lastDate;
       lastDate = msgDate;
-
       return (
         <div key={idx} style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
           {showSeparator && (
@@ -141,56 +132,48 @@ export default function ChatWindow({ patientId }) {
         body: JSON.stringify({ patientId, userMessage: userText, systemPrompt: `Paciente: ${patientData?.name}.` })
       });
       const data = await response.json();
-      
-      // --- ESTE ES EL FILTRO CLAVE QUE HE AÑADIDO ---
-      // Borra cualquier cosa que esté dentro de corchetes [ ]
-      const cleanText = (data.message || "").replace(/\[.*?\]/g, '').trim();
-      
+      const rawMessage = data.message || "";
+
+      // --- LÓGICA DE ACTUALIZACIÓN AUTOMÁTICA ---
+      const updates = {};
+      const weightMatch = rawMessage.match(/weight=(\d+(\.\d+)?)/);
+      const sleepMatch = rawMessage.match(/sleep_hours=(\d+(\.\d+)?)/);
+      const stressMatch = rawMessage.match(/stress_level=(\d+)/);
+
+      if (weightMatch) updates.weight = parseFloat(weightMatch[1]);
+      if (sleepMatch) updates.sleep_hours = parseFloat(sleepMatch[1]);
+      if (stressMatch) updates.stress_level = parseInt(stressMatch[1]);
+
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.from('patients').update(updates).eq('id', patientId);
+        if (!error) {
+          setPatientData(prev => ({ ...prev, ...updates }));
+        }
+      }
+
+      // --- FILTRO DE LIMPIEZA ---
+      const cleanText = rawMessage.replace(/\[.*?\]/g, '').trim();
       setMessages(prev => [...prev, { role: 'assistant', message: cleanText, created_at: new Date().toISOString() }]);
-      
-      // Opcional: Guardamos en la base de datos ya limpio para que no aparezca al recargar
       await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'assistant', message: cleanText }]);
       
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // CÁLCULOS (Ahora protegidos si patientData es null)
   const weight = patientData ? patientData.weight : 0;
   const heightCm = patientData ? patientData.height : 0;
-  
-  // Si no hay datos, mostramos 0.0 o "..."
   const imcReal = (heightCm > 0 && weight > 0) ? (weight / ((heightCm / 100) ** 2)).toFixed(1) : "...";
   const imcIdeal = 22.0;
-  
-  // Fórmula Mifflin-St Jeor simplificada
-  const recCalories = (heightCm > 0 && weight > 0) 
-    ? Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500) 
-    : 2000; // Valor base seguro mientras carga
-
+  const recCalories = (heightCm > 0 && weight > 0) ? Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500) : 2000;
   const dailyTotal = foodLogs.reduce((acc, curr) => acc + curr.calories, 0);
-  
-  const targets = { 
-    Desayuno: Math.round(recCalories * 0.20), 
-    Almuerzo: Math.round(recCalories * 0.10), 
-    Comida: Math.round(recCalories * 0.35), 
-    Merienda: Math.round(recCalories * 0.10), 
-    Cena: Math.round(recCalories * 0.20), 
-    Otros: Math.round(recCalories * 0.05) 
-  };
+  const targets = { Desayuno: Math.round(recCalories * 0.2), Almuerzo: Math.round(recCalories * 0.1), Comida: Math.round(recCalories * 0.35), Merienda: Math.round(recCalories * 0.1), Cena: Math.round(recCalories * 0.2), Otros: Math.round(recCalories * 0.05) };
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
-      
-      {/* --- PANEL IZQUIERDO --- */}
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
-        
         <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
           <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
-
-        {/* BLOQUE OSCURO: MÉTRICAS + CALENDARIO + COMIDA */}
         <div style={{ background: '#1e293b', padding: '20px', borderRadius: '24px', color: 'white', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', textAlign: 'center' }}>
             <div>
               <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800' }}>IMC REAL / IDEAL</div>
@@ -201,11 +184,9 @@ export default function ChatWindow({ patientId }) {
               <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories}</div>
             </div>
           </div>
-
           <div style={{ background: '#0f172a', padding: '12px', borderRadius: '16px', border: '1px solid #334155' }}>
             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ width: '100%', background: 'transparent', color: 'white', border: 'none', textAlign: 'center', fontWeight: '700', outline: 'none', cursor: 'pointer' }} />
           </div>
-
           {selectedDate === new Date().toISOString().split('T')[0] ? (
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
               <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
@@ -213,7 +194,6 @@ export default function ChatWindow({ patientId }) {
           ) : (
             <div style={{ padding: '10px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>Historial (Solo lectura)</div>
           )}
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {Object.keys(targets).map(cat => {
               const catTotal = foodLogs.filter(f => f.category === cat).reduce((acc, curr) => acc + curr.calories, 0);
@@ -228,8 +208,6 @@ export default function ChatWindow({ patientId }) {
             })}
           </div>
         </div>
-
-        {/* --- ESTA ES LA PARTE QUE FALTABA (BOTONES) --- */}
         <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <div style={{ background: 'white', padding: '15px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
@@ -240,7 +218,6 @@ export default function ChatWindow({ patientId }) {
                <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px' }} />
              </div>
           </div>
-          
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <button onClick={() => window.print()} style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>📄 INFORME</button>
             <Link href="/" style={{ textDecoration: 'none' }}>
@@ -248,10 +225,8 @@ export default function ChatWindow({ patientId }) {
             </Link>
           </div>
         </div>
-
       </aside>
 
-      {/* --- PANEL DERECHO (CHAT) --- */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {renderMessagesWithDates()}
