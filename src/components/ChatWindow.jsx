@@ -8,16 +8,46 @@ export default function ChatWindow({ patientId }) {
   const [patientData, setPatientData] = useState(null);
   const messagesEndRef = useRef(null);
 
+  // --- LÓGICA DEL AVATAR DINÁMICO ---
+  const getAvatarConfig = () => {
+    const stress = patientData?.stress_level || 0;
+    if (stress >= 8) {
+      return {
+        emoji: "😰",
+        color: "#ff4d4d",
+        label: "Estado Crítico",
+        shadow: "0 0 15px rgba(255, 77, 77, 0.4)",
+        pulse: true
+      };
+    } else if (stress >= 4) {
+      return {
+        emoji: "😐",
+        color: "#ffa502",
+        label: "Estado Alerta",
+        shadow: "0 0 15px rgba(255, 165, 2, 0.3)",
+        pulse: false
+      };
+    } else {
+      return {
+        emoji: "😊",
+        color: "#27ae60",
+        label: "Estado Óptimo",
+        shadow: "0 0 15px rgba(39, 174, 96, 0.2)",
+        pulse: false
+      };
+    }
+  };
+
+  const avatar = getAvatarConfig();
+
   // 1. CARGA DE DATOS E HISTORIAL
   useEffect(() => {
     const loadAllData = async () => {
       if (!patientId) return;
       
-      // Datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
-      // Historial de chat real desde la DB
       const { data: cData } = await supabase
         .from('chat_history')
         .select('role, message')
@@ -53,7 +83,7 @@ export default function ChatWindow({ patientId }) {
     ]);
   };
 
-  // 3. ENVÍO DE MENSAJES CON PROMPT AVANZADO
+  // 3. ENVÍO DE MENSAJES
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
@@ -61,11 +91,10 @@ export default function ChatWindow({ patientId }) {
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
-    await saveToDB('user', userText); // Guardamos el mensaje del usuario
+    await saveToDB('user', userText);
     setLoading(true);
 
     try {
-      // ESTE ES EL CEREBRO: El System Prompt
       const contextPrompt = `
         Eres Salud360, un Asistente Médico y Coach de Bienestar experto.
         CONTEXTO DEL PACIENTE:
@@ -75,11 +104,10 @@ export default function ChatWindow({ patientId }) {
         - Datos de hoy: Peso ${patientData?.weight}kg, Estrés ${patientData?.stress_level}/10, Sueño ${patientData?.sleep_hours}h.
 
         TAREA:
-        - Analiza si sus métricas son saludables para su nivel de actividad.
-        - Si el estrés es alto (>7), prioriza consejos de calma.
-        - Si es sedentario, motiva pequeños cambios.
-        - Sé empático pero profesional. Usa datos científicos.
-        - Para asignar un reto usa: [RETO: Nombre corto del reto].
+        - Analiza si sus métricas son saludables.
+        - Si el estrés es alto (>7), prioriza calma.
+        - Si es sedentario, motiva cambios.
+        - Usa: [RETO: Nombre corto] para asignar objetivos.
       `;
 
       const response = await fetch('/api/chat', {
@@ -95,7 +123,6 @@ export default function ChatWindow({ patientId }) {
       const data = await response.json();
       let aiMessage = data.message || "Lo siento, mi conexión se ha interrumpido.";
 
-      // Detección de retos
       const challengeMatch = aiMessage.match(/\[RETO:\s*(.*?)\]/);
       if (challengeMatch) {
         const challengeTitle = challengeMatch[1];
@@ -104,7 +131,7 @@ export default function ChatWindow({ patientId }) {
       }
 
       setMessages(prev => [...prev, { role: 'assistant', message: aiMessage }]);
-      await saveToDB('assistant', aiMessage); // Guardamos la respuesta de la IA
+      await saveToDB('assistant', aiMessage);
 
     } catch (error) {
       console.error("Error en la comunicación:", error);
@@ -113,15 +140,41 @@ export default function ChatWindow({ patientId }) {
     }
   };
 
-  // 4. DISEÑO VISUAL
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9', fontFamily: 'system-ui, sans-serif' }}>
-      {/* Header */}
+      
+      {/* CSS para la animación de pulso del Avatar */}
+      <style>{`
+        @keyframes avatar-pulse {
+          0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7); }
+          70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(255, 77, 77, 0); }
+          100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
+        }
+        .pulse-effect { animation: avatar-pulse 2s infinite; }
+      `}</style>
+
+      {/* Header con Avatar Dinámico */}
       <div style={{ padding: '15px 25px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <div style={{ width: '45px', height: '45px', background: '#27ae60', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '20px' }}>S</div>
+        <div style={{
+          width: '50px',
+          height: '50px',
+          background: 'white',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '24px',
+          border: `3px solid ${avatar.color}`,
+          boxShadow: avatar.shadow,
+          transition: 'all 0.5s ease'
+        }} className={avatar.pulse ? 'pulse-effect' : ''}>
+          {avatar.emoji}
+        </div>
         <div>
           <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Especialista Salud360</h3>
-          <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>● En línea | Analizando perfil de {patientData?.name}</span>
+          <span style={{ fontSize: '12px', color: avatar.color, fontWeight: 'bold', textTransform: 'uppercase' }}>
+            ● {avatar.label} | {patientData?.name}
+          </span>
         </div>
       </div>
 
@@ -139,12 +192,17 @@ export default function ChatWindow({ patientId }) {
             lineHeight: '1.5',
             boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
             border: msg.role === 'assistant' ? '1px solid #e2e8f0' : 'none',
-            whiteSpace: 'pre-line' // Para que respete los saltos de línea
+            whiteSpace: 'pre-line'
           }}>
             {msg.message}
           </div>
         ))}
-        {loading && <div style={{ color: '#64748b', fontSize: '13px', fontStyle: 'italic' }}>Salud360 está procesando tus biométricas...</div>}
+        {loading && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: '#64748b', fontSize: '13px', marginLeft: '5px' }}>
+            <span className="pulse-effect" style={{ width: '8px', height: '8px', background: avatar.color, borderRadius: '50%' }}></span>
+            Analizando tus biométricas...
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -154,9 +212,9 @@ export default function ChatWindow({ patientId }) {
           style={{ flex: 1, padding: '14px 20px', borderRadius: '15px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '15px', background: '#f8fafc' }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Escribe tu duda o cómo te sientes..."
+          placeholder="Escribe cómo te sientes..."
         />
-        <button type="submit" style={{ background: '#27ae60', color: 'white', border: 'none', padding: '0 25px', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s' }}>
+        <button type="submit" style={{ background: '#27ae60', color: 'white', border: 'none', padding: '0 25px', borderRadius: '15px', cursor: 'pointer', fontWeight: 'bold' }}>
           Enviar
         </button>
       </form>
