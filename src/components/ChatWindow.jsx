@@ -6,10 +6,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import FoodTracker from './FoodTracker';
 
-// Importación dinámica optimizada
+// Importación dinámica con altura fija garantizada en el loading
 const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
   ssr: false,
-  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '12px' }}>Iniciando escaneo...</div>
+  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '24px' }} />
 });
 
 export default function ChatWindow({ patientId }) {
@@ -48,7 +48,7 @@ export default function ChatWindow({ patientId }) {
   useEffect(() => { loadAllData(); }, [patientId]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // --- LÓGICA NUTRICIONAL PROTEGIDA ---
+  // --- LÓGICA NUTRICIONAL ---
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const heightM = heightCm / 100;
@@ -88,24 +88,29 @@ export default function ChatWindow({ patientId }) {
       });
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
-      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }, { patient_id: patientId, role: 'assistant', message: data.message }]);
+      await supabase.from('chat_history').insert([
+        { patient_id: patientId, role: 'user', message: userText }, 
+        { patient_id: patientId, role: 'assistant', message: data.message }
+      ]);
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // Eliminamos el return prematuro para que el layout se mantenga estable
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%', background: '#f8fafc', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         
-        {/* VISUALIZADOR 3D - Contenedor con altura reservada */}
-        <div style={{ height: '350px', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', marginBottom: '15px', background: '#020617' }}>
-          {!isInitialLoading && patientData ? (
-            <BiometricVisualizer patientData={patientData} />
-          ) : (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '12px' }}>
-              Cargando biometría...
-            </div>
-          )}
+        {/* VISUALIZADOR 3D - Mantenemos el componente siempre montado pero le pasamos los datos cuando existan */}
+        <div style={{ 
+          minHeight: '350px', 
+          height: '350px', 
+          borderRadius: '24px', 
+          overflow: 'hidden', 
+          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', 
+          marginBottom: '15px', 
+          background: '#020617',
+          position: 'relative'
+        }}>
+          <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
 
         {/* WIDGET BIOMÉTRICO */}
@@ -142,7 +147,7 @@ export default function ChatWindow({ patientId }) {
                   <summary style={{ listStyle: 'none', padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{cat}</span>
-                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>Objetivo: {target} kcal</span>
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>Obj: {target} kcal</span>
                     </div>
                     <div style={{ fontSize: '13px', fontWeight: '800', color: catTotal > target ? '#ef4444' : '#22c55e' }}>
                       {catTotal} kcal
@@ -162,7 +167,7 @@ export default function ChatWindow({ patientId }) {
           </div>
         </div>
 
-        {/* BARRA TOTAL INFERIOR */}
+        {/* CONTADOR TOTAL FINAL */}
         <div style={{ marginTop: '20px', padding: '18px', background: 'white', borderRadius: '20px', border: '2px solid #e2e8f0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: '800', fontSize: '13px', color: '#64748b' }}>CONSUMO TOTAL</span>
@@ -196,7 +201,7 @@ export default function ChatWindow({ patientId }) {
               background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
               padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
               maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0',
-              border: '1px solid #f1f5f9', fontSize: '14px', color: '#1e293b'
+              border: '1px solid #f1f5f9', fontSize: '14px'
             }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             </div>
@@ -204,24 +209,18 @@ export default function ChatWindow({ patientId }) {
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px', background: 'white' }}>
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
           <input 
-            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }}
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }}
             value={input} onChange={(e) => setInput(e.target.value)}
             placeholder="Escribe un mensaje..."
             disabled={loading}
           />
-          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none' }}>
             {loading ? '...' : 'Enviar'}
           </button>
         </form>
       </main>
-
-      <style jsx global>{`
-        summary::-webkit-details-marker { display: none; }
-        .markdown-container table { border-collapse: collapse; width: 100%; margin: 15px 0; }
-        .markdown-container th, td { padding: 10px; border: 1px solid #e2e8f0; }
-      `}</style>
     </div>
   );
 }
