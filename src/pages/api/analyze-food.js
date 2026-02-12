@@ -1,20 +1,17 @@
 export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
   const { foodText } = req.body;
 
-  if (!foodText) {
-    return res.status(400).json({ error: "No se proporcionó texto de comida" });
+  // 1. Verificación de API Key
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("ERROR: Falta OPENAI_API_KEY en variables de entorno");
+    return res.status(500).json({ error: "Configuración del servidor incompleta (API Key)" });
   }
 
-  const prompt = `Actúa como un nutricionista experto. Analiza el siguiente texto: "${foodText}". 
-  Devuelve ÚNICAMENTE un objeto JSON puro, sin texto adicional, con esta estructura:
-  {
-    "calories": número_entero_estimado,
-    "nutrients": {
-      "proteinas": "gramos",
-      "carbohidratos": "gramos",
-      "grasas": "gramos"
-    }
-  }`;
+  const prompt = `Analiza: "${foodText}". 
+  Responde UNICAMENTE un objeto JSON con este formato:
+  {"calories": 300, "nutrients": {"proteinas": "10g", "carbohidratos": "20g", "grasas": "5g"}}`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -25,29 +22,35 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
-        messages: [{ role: "system", content: "Eres un extractor de datos nutricionales en formato JSON." }, { role: "user", content: prompt }],
-        temperature: 0.1 // Temperatura baja para que sea más preciso y no alucine
+        messages: [
+          { role: "system", content: "Eres un asistente que solo responde en JSON puro." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0
       })
     });
 
     const data = await response.json();
     
-    // Limpieza de seguridad por si la IA envía backticks o texto extra
-    let content = data.choices[0].message.content.trim();
-    if (content.includes("```json")) {
-      content = content.split("```json")[1].split("```")[0];
+    if (!data.choices || data.choices.length === 0) {
+      throw new Error("OpenAI no devolvió resultados");
     }
+
+    let rawContent = data.choices[0].message.content.trim();
     
-    const result = JSON.parse(content);
+    // 2. Limpiador de JSON (Elimina posibles backticks o texto extra)
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta");
     
-    // Devolvemos el resultado asegurándonos de que calories exista
+    const cleanJson = JSON.parse(jsonMatch[0]);
+
     res.status(200).json({
-      calories: result.calories || 0,
-      nutrients: result.nutrients || {}
+      calories: cleanJson.calories || 0,
+      nutrients: cleanJson.nutrients || {}
     });
 
   } catch (error) {
-    console.error("Error en API Analyze Food:", error);
-    res.status(500).json({ error: "Error analizando nutrición", details: error.message });
+    console.error("API Error:", error.message);
+    res.status(500).json({ error: "Error en el análisis", details: error.message });
   }
 }
