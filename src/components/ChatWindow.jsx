@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
-// CARGA DINÁMICA DEL VISUALIZADOR
 const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
   ssr: false,
   loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '20px' }} />
@@ -21,11 +20,7 @@ export default function ChatWindow({ patientId }) {
       if (!patientId) return;
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
-
-      const { data: cData } = await supabase
-        .from('chat_history').select('role, message')
-        .eq('patient_id', patientId).order('created_at', { ascending: true });
-
+      const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
       if (cData && cData.length > 0) setMessages(cData);
     };
     loadAllData();
@@ -42,7 +37,6 @@ export default function ChatWindow({ patientId }) {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
     setLoading(true);
-
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -51,87 +45,106 @@ export default function ChatWindow({ patientId }) {
       });
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
-      await supabase.from('chat_history').insert([
-        { patient_id: patientId, role: 'user', message: userText },
-        { patient_id: patientId, role: 'assistant', message: data.message }
-      ]);
+      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }, { patient_id: patientId, role: 'assistant', message: data.message }]);
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // Componente interno para las barras de progreso estéticas
-  const ProgressBar = ({ label, value, color, icon }) => (
-    <div style={{ marginBottom: '15px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '12px', fontWeight: '600' }}>
-        <span>{icon} {label}</span>
-        <span>{value}%</span>
+  // COMPONENTE DE LOGRO ESTILO DASHBOARD MÉDICO
+  const AchievementCard = ({ label, value, color, icon, detail }) => (
+    <div style={{ 
+      background: 'white', 
+      padding: '16px', 
+      borderRadius: '16px', 
+      marginBottom: '12px', 
+      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.06)',
+      border: '1px solid #f1f5f9'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+        <div style={{ 
+          width: '36px', height: '36px', borderRadius: '10px', background: `${color}15`, 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' 
+        }}>
+          {icon}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{label}</div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>{detail}</div>
+        </div>
+        <div style={{ fontSize: '13px', fontWeight: '800', color: color }}>{value}%</div>
       </div>
-      <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-        <div style={{ width: `${value}%`, height: '100%', background: color, borderRadius: '10px', transition: 'width 1s ease-in-out' }}></div>
+      <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '10px' }}>
+        <div style={{ width: `${value}%`, height: '100%', background: color, borderRadius: '10px' }}></div>
       </div>
     </div>
   );
 
   return (
-    <div style={{ display: 'flex', width: '100vw', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', width: '100vw', height: '100vh', background: '#f8fafc', overflow: 'hidden', fontFamily: '"Inter", sans-serif' }}>
       
-      {/* PANEL IZQUIERDO: BIOMETRÍA Y PROGRESO ESTÉTICO */}
+      {/* PANEL IZQUIERDO ESTILO DASHBOARD */}
       <aside style={{ 
-        width: '380px', minWidth: '380px', background: 'white', 
+        width: '400px', minWidth: '400px', background: '#f8fafc', 
         borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', 
-        padding: '20px', height: '100vh', overflowY: 'auto' 
+        padding: '24px', height: '100vh', overflowY: 'auto' 
       }}>
-        <BiometricVisualizer patientData={patientData} />
-
-        <div style={{ marginTop: '25px' }}>
-          <h4 style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', marginBottom: '15px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Progreso de Objetivos
-          </h4>
-          
-          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '15px', border: '1px solid #f1f5f9' }}>
-            <ProgressBar label="Actividad Física" value={65} color="#3b82f6" icon="🏃" />
-            <ProgressBar label="Hidratación" value={90} color="#0ea5e9" icon="💧" />
-            <ProgressBar label="Control de Estrés" value={40} color="#8b5cf6" icon="🧘" />
-          </div>
+        
+        {/* Card del Visualizador */}
+        <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+          <BiometricVisualizer patientData={patientData} />
         </div>
 
-        <div style={{ marginTop: 'auto', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ marginTop: '24px' }}>
+          <h4 style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', marginBottom: '16px', letterSpacing: '0.05em', paddingLeft: '4px' }}>
+            ESTADO DE OBJETIVOS
+          </h4>
+          
+          <AchievementCard label="Actividad Diaria" detail="Caminar 30 min" value={65} color="#3b82f6" icon="🏃" />
+          <AchievementCard label="Hidratación" detail="Consumo de agua" value={90} color="#0ea5e9" icon="💧" />
+          <AchievementCard label="Gestión de Estrés" detail="Ejercicios calma" value={42} color="#8b5cf6" icon="🧘" />
+        </div>
+
+        <div style={{ marginTop: 'auto', paddingTop: '20px', display: 'flex', gap: '12px' }}>
           <button onClick={() => window.print()} style={{ 
-            padding: '14px', background: '#0f172a', color: 'white', border: 'none', 
-            borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px',
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+            flex: 1, padding: '14px', background: '#ffffff', color: '#1e293b', border: '1px solid #e2e8f0', 
+            borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
           }}>
-            Descargar Informe Médico
+            📄 Informe
           </button>
           
-          <Link href="/" style={{ textDecoration: 'none' }}>
+          <Link href="/" style={{ flex: 1.5, textDecoration: 'none' }}>
             <button style={{ 
-              width: '100%', padding: '14px', background: 'white', color: '#ef4444', 
-              border: '1px solid #fee2e2', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px'
+              width: '100%', padding: '14px', background: '#ef4444', color: 'white', 
+              border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '13px'
             }}>
-              Terminar Consulta
+              Finalizar Sesión
             </button>
           </Link>
         </div>
       </aside>
 
       {/* PANEL DERECHO: CHAT */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
-        <header style={{ padding: '20px 30px', background: 'white', borderBottom: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Asistente Clínico Inteligente</h3>
-          <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>Paciente en línea: {patientData?.name}</p>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
+        <header style={{ padding: '20px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: '#0f172a' }}>Consulta Digital</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e' }}></div>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>Paciente: {patientData?.name || 'Cargando...'}</span>
+            </div>
+          </div>
         </header>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '30px', background: '#f8fafc' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '32px', background: '#ffffff' }}>
           {messages.map((msg, idx) => (
             <div key={idx} style={{
               alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              background: msg.role === 'user' ? '#0f172a' : 'white',
-              color: msg.role === 'user' ? 'white' : '#334155',
-              padding: '14px 20px', borderRadius: '15px', marginBottom: '15px',
-              maxWidth: '70%', marginLeft: msg.role === 'user' ? 'auto' : '0',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              border: msg.role === 'assistant' ? '1px solid #e2e8f0' : 'none',
-              lineHeight: '1.6'
+              background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
+              color: '#1e293b',
+              padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
+              maxWidth: '75%', marginLeft: msg.role === 'user' ? 'auto' : '0',
+              border: '1px solid #f1f5f9',
+              boxShadow: msg.role === 'user' ? 'none' : '0 4px 6px -1px rgba(0,0,0,0.02)',
+              fontSize: '14px', lineHeight: '1.6'
             }}>
               {msg.message}
             </div>
@@ -139,15 +152,15 @@ export default function ChatWindow({ patientId }) {
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={handleSendMessage} style={{ padding: '25px', background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '12px' }}>
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 32px', background: 'white', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
           <input 
-            style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+            style={{ flex: 1, padding: '16px 20px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }}
             value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Escriba su consulta..."
+            placeholder="Escribe tu mensaje..."
           />
           <button type="submit" style={{ 
-            background: '#16a34a', color: 'white', border: 'none', 
-            padding: '0 25px', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' 
+            background: '#0f172a', color: 'white', border: 'none', 
+            padding: '0 32px', borderRadius: '14px', fontWeight: '700', cursor: 'pointer', fontSize: '14px'
           }}>Enviar</button>
         </form>
       </main>
