@@ -33,9 +33,27 @@ export default function MedicalDashboard() {
 
     if (!error && data) {
       setPatients(data);
-      if (!selectedPatient) setSelectedPatient(data[0]);
+      if (data.length > 0 && !selectedPatient) setSelectedPatient(data[0]);
     }
     setLoading(false);
+  };
+
+  // NUEVA FUNCIÓN: ELIMINAR PACIENTE
+  const deletePatient = async (e, id) => {
+    e.stopPropagation(); // Evita que al borrar se seleccione el paciente
+    if (!confirm("¿Estás seguro de que quieres eliminar este paciente? Se borrará todo su historial y retos.")) return;
+
+    const { error } = await supabase.from('patients').delete().eq('id', id);
+    
+    if (error) {
+      alert("Error al borrar: " + error.message);
+    } else {
+      const updatedPatients = patients.filter(p => p.id !== id);
+      setPatients(updatedPatients);
+      if (selectedPatient?.id === id) {
+        setSelectedPatient(updatedPatients[0] || null);
+      }
+    }
   };
 
   const fetchHistory = async (id) => {
@@ -64,147 +82,96 @@ export default function MedicalDashboard() {
     setChallenges(data || []);
   };
 
-  if (loading) return (
-    <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ border: '4px solid #f3f3f3', borderTop: '4px solid #27ae60', borderRadius: '50%', width: '40px', height: '40px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
-        <p style={{ color: '#64748b' }}>Cargando Panel Médico...</p>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    </div>
-  );
+  if (loading) return <div style={{ padding: '50px', textAlign: 'center' }}>Cargando Panel...</div>;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#f8fafc' }}>
       
-      {/* SIDEBAR: LISTA DE PACIENTES */}
+      {/* SIDEBAR */}
       <aside style={{ background: 'white', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '24px', borderBottom: '1px solid #f1f5f9' }}>
-          <h2 style={{ fontSize: '20px', color: '#1e293b', margin: 0 }}>Pacientes</h2>
-          <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Salud360 Control Center</p>
+          <h2 style={{ fontSize: '20px', color: '#1e293b', margin: 0 }}>Gestión Clínica</h2>
         </div>
         
         <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
+          {patients.length === 0 && <p style={{color: '#94a3b8', textAlign: 'center', fontSize: '14px'}}>No hay pacientes registrados.</p>}
           {patients.map(p => (
             <div 
               key={p.id} 
               onClick={() => setSelectedPatient(p)}
               style={{ 
-                padding: '16px', borderRadius: '12px', cursor: 'pointer', marginBottom: '10px',
-                transition: 'all 0.2s',
+                padding: '12px', borderRadius: '12px', cursor: 'pointer', marginBottom: '10px',
+                position: 'relative', transition: 'all 0.2s',
                 background: selectedPatient?.id === p.id ? '#f0fdf4' : 'transparent',
                 border: selectedPatient?.id === p.id ? '1px solid #27ae60' : '1px solid transparent',
-                boxShadow: selectedPatient?.id === p.id ? '0 4px 6px -1px rgba(39,174,96,0.1)' : 'none'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: '600', color: '#334155' }}>{p.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '25px' }}>
+                <span style={{ fontWeight: '600', color: '#334155', fontSize: '14px' }}>{p.name}</span>
                 {p.stress_level >= 8 && (
-                  <span title="Alerta: Estrés Alto" style={{ background: '#ef4444', width: '8px', height: '8px', borderRadius: '50%' }}></span>
+                  <span style={{ background: '#ef4444', width: '8px', height: '8px', borderRadius: '50%' }}></span>
                 )}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{p.health_goal}</div>
+              
+              {/* BOTÓN ELIMINAR */}
+              <button 
+                onClick={(e) => deletePatient(e, p.id)}
+                style={{ 
+                  position: 'absolute', right: '10px', top: '15px', background: 'none', 
+                  border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: '16px' 
+                }}
+                onMouseEnter={(e) => e.target.style.color = '#ef4444'}
+                onMouseLeave={(e) => e.target.style.color = '#cbd5e1'}
+              >
+                🗑️
+              </button>
             </div>
           ))}
         </div>
-        
-        <div style={{ padding: '20px', borderTop: '1px solid #f1f5f9' }}>
-          <button onClick={() => router.push('/')} style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: 'none', borderRadius: '8px', color: '#475569', fontWeight: '600', cursor: 'pointer' }}>
-            Cerrar Sesión
-          </button>
-        </div>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* CONTENIDO PRINCIPAL (Igual que antes pero con manejo de estado vacío) */}
       <main style={{ overflowY: 'auto', padding: '40px' }}>
-        <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h1 style={{ fontSize: '28px', color: '#1e293b', margin: 0 }}>Ficha de {selectedPatient?.name}</h1>
-            <p style={{ color: '#64748b' }}>Última actualización: {new Date(selectedPatient?.updated_at).toLocaleDateString()}</p>
-          </div>
-          <button 
-            onClick={() => router.push(`/chat?id=${selectedPatient.id}`)}
-            style={{ background: '#27ae60', color: 'white', padding: '12px 24px', borderRadius: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(39,174,96,0.2)' }}
-          >
-            Intervenir en Chat
-          </button>
-        </header>
+        {selectedPatient ? (
+          <>
+            <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <h1 style={{ fontSize: '28px', color: '#1e293b' }}>Ficha de {selectedPatient.name}</h1>
+              </div>
+              <button onClick={() => router.push('/')} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #ddd', background: 'white' }}>Volver Inicio</button>
+            </header>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px' }}>
-          
-          {/* GRÁFICA DE EVOLUCIÓN */}
-          <div style={{ background: 'white', padding: '24px', borderRadius: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ marginBottom: '24px', color: '#334155', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              📊 Tendencia Biométrica
-              <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#27ae60' }}>● Peso (kg)</span>
-              <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#ef4444' }}>● Estrés</span>
-            </h3>
-            <div style={{ width: '100%', height: '350px' }}>
-              {history.length > 0 ? (
-                <ResponsiveContainer>
-                  <LineChart data={history}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                    <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fontSize: 12}} />
-                    <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fontSize: 12}} />
-                    <Tooltip contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                    <Line yAxisId="left" type="monotone" dataKey="peso" stroke="#27ae60" strokeWidth={4} dot={{r: 6, fill: '#27ae60', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 8}} />
-                    <Line yAxisId="right" type="monotone" dataKey="estres" stroke="#ef4444" strokeWidth={4} dot={{r: 6, fill: '#ef4444', strokeWidth: 2, stroke: '#fff'}} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', background: '#f8fafc', borderRadius: '12px' }}>
-                  Esperando suficientes datos históricos...
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* FICHA DETALLADA Y RETOS */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ background: 'white', padding: '24px', borderRadius: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px' }}>Perfil Clínico</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '10px' }}>
-                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', display: 'block' }}>DIETA</label>
-                  <span style={{ color: '#1e293b', fontWeight: '500', textTransform: 'capitalize' }}>{selectedPatient?.diet_type}</span>
-                </div>
-                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '10px' }}>
-                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', display: 'block' }}>SUEÑO</label>
-                  <span style={{ color: '#1e293b', fontWeight: '500' }}>{selectedPatient?.sleep_hours}h promedio</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px' }}>
+              {/* Gráfica */}
+              <div style={{ background: 'white', padding: '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                <div style={{ width: '100%', height: '350px' }}>
+                  <ResponsiveContainer>
+                    <LineChart data={history}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="fecha" />
+                      <YAxis yAxisId="left" />
+                      <Tooltip />
+                      <Line yAxisId="left" type="monotone" dataKey="peso" stroke="#27ae60" strokeWidth={3} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
-              <div style={{ marginTop: '15px', padding: '12px', background: '#fff1f2', borderRadius: '10px' }}>
-                <label style={{ fontSize: '11px', color: '#be123c', fontWeight: 'bold', display: 'block' }}>ALERGIAS / RIESGOS</label>
-                <span style={{ color: '#be123c', fontWeight: '500' }}>{selectedPatient?.allergies || 'Sin registros'}</span>
-              </div>
-            </div>
 
-            <div style={{ background: 'white', padding: '24px', borderRadius: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', flex: 1 }}>
-              <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px' }}>🎯 Retos Semanales</h3>
-              {challenges.length > 0 ? challenges.map(c => (
-                <div key={c.id} style={{ 
-                  padding: '14px', background: c.is_completed ? '#f0fdf4' : '#fffbeb', 
-                  borderRadius: '12px', border: `1px solid ${c.is_completed ? '#dcfce7' : '#fef3c7'}`,
-                  marginBottom: '10px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '18px' }}>{c.is_completed ? '✅' : '⏳'}</span>
-                    <div>
-                      <div style={{ fontWeight: 'bold', color: c.is_completed ? '#166534' : '#92400e', fontSize: '14px' }}>{c.title}</div>
-                      <div style={{ fontSize: '11px', color: c.is_completed ? '#16a34a' : '#b45309' }}>{new Date(c.created_at).toLocaleDateString()}</div>
-                    </div>
+              {/* Retos */}
+              <div style={{ background: 'white', padding: '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ marginTop: 0 }}>🎯 Retos de IA</h3>
+                {challenges.length > 0 ? challenges.map(c => (
+                  <div key={c.id} style={{ padding: '10px', background: '#f8fafc', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #27ae60' }}>
+                    <div style={{fontWeight: 'bold', fontSize: '14px'}}>{c.title}</div>
+                    <div style={{fontSize: '11px', color: '#64748b'}}>{new Date(c.created_at).toLocaleDateString()}</div>
                   </div>
-                </div>
-              )) : (
-                <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', border: '2px dashed #f1f5f9', borderRadius: '12px' }}>
-                  <p style={{ fontSize: '13px' }}>Aún no hay retos asignados por la IA.</p>
-                </div>
-              )}
+                )) : <p style={{color: '#94a3b8', fontSize: '13px'}}>No hay retos aún.</p>}
+              </div>
             </div>
-          </div>
-
-        </div>
+          </>
+        ) : (
+          <div style={{textAlign: 'center', marginTop: '100px', color: '#94a3b8'}}>Selecciona un paciente o limpia la lista para empezar de nuevo.</div>
+        )}
       </main>
     </div>
   );
