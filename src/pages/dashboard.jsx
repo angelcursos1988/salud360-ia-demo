@@ -8,6 +8,7 @@ export default function MedicalDashboard() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [history, setHistory] = useState([]);
   const [challenges, setChallenges] = useState([]);
+  const [lastPlan, setLastPlan] = useState(""); // Estado para el menú IA
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -17,6 +18,7 @@ export default function MedicalDashboard() {
     if (selectedPatient?.id) {
       fetchHistory(selectedPatient.id);
       fetchChallenges(selectedPatient.id);
+      fetchLastPlan(selectedPatient.id); // Nueva función
     }
   }, [selectedPatient?.id]);
 
@@ -43,6 +45,22 @@ export default function MedicalDashboard() {
   const fetchChallenges = async (id) => {
     const { data } = await supabase.from('challenges').select('*').eq('patient_id', id).order('created_at', { ascending: false });
     setChallenges(data || []);
+  };
+
+  // NUEVA FUNCIÓN: Recupera el último mensaje largo (menú) del chat
+  const fetchLastPlan = async (id) => {
+    const { data } = await supabase
+      .from('chat_history')
+      .select('message')
+      .eq('patient_id', id)
+      .eq('role', 'assistant')
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      // Buscamos el primer mensaje que parezca un menú o tenga contenido extenso
+      const plan = data.find(m => m.message.length > 200 || m.message.toLowerCase().includes('menú') || m.message.toLowerCase().includes('desayuno'));
+      setLastPlan(plan ? plan.message : "No se ha generado un plan nutricional detallado todavía.");
+    }
   };
 
   const deletePatient = async (e, id) => {
@@ -110,7 +128,7 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
 
-                {/* BLOQUE DE ESTILO DE VIDA (NUEVO) */}
+                {/* BLOQUE DE ESTILO DE VIDA */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
                   <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Sexo</span>
@@ -126,6 +144,23 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
 
+                {/* NUEVO: BLOQUE DE PLAN NUTRICIONAL / MENÚ */}
+                <div style={{ background: 'white', padding: '25px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                  <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#1e293b' }}>📋 Último Plan Nutricional Sugerido</h3>
+                  <div style={{ 
+                    background: '#f1f5f9', 
+                    padding: '20px', 
+                    borderRadius: '12px', 
+                    fontSize: '14px', 
+                    lineHeight: '1.6', 
+                    whiteSpace: 'pre-line',
+                    border: '1px solid #e2e8f0',
+                    color: '#334155'
+                  }}>
+                    {lastPlan}
+                  </div>
+                </div>
+
                 {/* ALERGIAS Y CONDICIONES */}
                 <div style={{ background: '#fef2f2', padding: '20px', borderRadius: '15px', border: '1px solid #fee2e2' }}>
                   <h4 style={{ margin: '0 0 10px 0', color: '#991b1b', fontSize: '14px' }}>⚠️ Alergias y Observaciones</h4>
@@ -134,7 +169,7 @@ export default function MedicalDashboard() {
               </div>
 
               {/* RETOS */}
-              <div style={{ background: 'white', padding: '25px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+              <div style={{ background: 'white', padding: '25px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', height: 'fit-content' }}>
                 <h3 style={{ margin: '0 0 20px 0', fontSize: '16px' }}>🎯 Objetivos IA</h3>
                 {challenges.length > 0 ? challenges.map(c => (
                   <div key={c.id} style={{ padding: '12px', background: '#f8fafc', borderRadius: '10px', marginBottom: '10px', borderLeft: '4px solid #27ae60' }}>
