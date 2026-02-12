@@ -83,9 +83,11 @@ export default function ChatWindow({ patientId }) {
             });
             const data = await res.json();
             if (data.message) {
-               const newMsg = { role: 'assistant', message: data.message, created_at: new Date().toISOString() };
+               // FILTRO PARA SALUDO: Borra los corchetes [UPDATE...]
+               const cleanGreeting = data.message.replace(/\[.*?\]/g, '').trim();
+               const newMsg = { role: 'assistant', message: cleanGreeting, created_at: new Date().toISOString() };
                setMessages(prev => [...prev, newMsg]);
-               await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'assistant', message: data.message }]);
+               await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'assistant', message: cleanGreeting }]);
             }
           } catch (e) { console.error(e); } finally { setLoading(false); }
         }
@@ -139,8 +141,16 @@ export default function ChatWindow({ patientId }) {
         body: JSON.stringify({ patientId, userMessage: userText, systemPrompt: `Paciente: ${patientData?.name}.` })
       });
       const data = await response.json();
-      const cleanText = (data.message || "").replace(/\[UPDATE:.*?\]/g, '').trim();
+      
+      // --- ESTE ES EL FILTRO CLAVE QUE HE AÑADIDO ---
+      // Borra cualquier cosa que esté dentro de corchetes [ ]
+      const cleanText = (data.message || "").replace(/\[.*?\]/g, '').trim();
+      
       setMessages(prev => [...prev, { role: 'assistant', message: cleanText, created_at: new Date().toISOString() }]);
+      
+      // Opcional: Guardamos en la base de datos ya limpio para que no aparezca al recargar
+      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'assistant', message: cleanText }]);
+      
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
