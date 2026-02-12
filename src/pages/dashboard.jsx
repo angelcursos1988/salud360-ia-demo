@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/router';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import dynamic from 'next/dynamic';
+import Link from 'next/link'; // Importación necesaria para la navegación
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
@@ -64,9 +65,9 @@ export default function MedicalDashboard() {
     }
   };
 
-  // ACTUALIZAR PROGRESO BIOMÉTRICO (NUEVA FUNCIÓN)
+  // ACTUALIZAR PROGRESO BIOMÉTRICO
   const updateBiometricProgress = async (field, value) => {
-    const newValue = Math.max(0, Math.min(100, value));
+    const newValue = parseInt(value);
     const { error } = await supabase
       .from('patients')
       .update({ [field]: newValue })
@@ -117,9 +118,9 @@ export default function MedicalDashboard() {
             padding: '16px', borderRadius: '20px', cursor: 'pointer', marginBottom: '12px',
             background: selectedPatient?.id === p.id ? '#f1f5f9' : 'white',
             border: `1px solid ${selectedPatient?.id === p.id ? '#cbd5e1' : '#f1f5f9'}`,
-            display: 'flex', gap: '12px', alignItems: 'center'
+            display: 'flex', gap: '12px', alignItems: 'center', transition: 'all 0.2s'
           }}>
-            <div style={{ width: '60px', height: '60px', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ width: '60px', height: '60px', borderRadius: '12px', overflow: 'hidden', background: '#020617' }}>
                <MiniVisualizer patientData={p} isMini={true} />
             </div>
             <div style={{ flex: 1 }}>
@@ -135,25 +136,30 @@ export default function MedicalDashboard() {
           <div>
             <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                <div style={{ width: '100px', height: '120px', borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ width: '100px', height: '120px', borderRadius: '16px', overflow: 'hidden', background: '#020617' }}>
                     <MiniVisualizer patientData={selectedPatient} isMini={true} />
                 </div>
                 <div>
                   <h1 style={{ fontSize: '28px', fontWeight: '900', margin: 0 }}>{selectedPatient.name}</h1>
-                  <p style={{ color: '#64748b' }}>Status: {selectedPatient.health_goal}</p>
+                  <p style={{ color: '#64748b', margin: 0 }}>Status: {selectedPatient.health_goal}</p>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={generatePDF} style={{ padding: '12px 24px', borderRadius: '12px', background: '#0f172a', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '700' }}>📄 PDF</button>
-                <button onClick={() => router.push(`/chat/${selectedPatient.id}`)} style={{ padding: '12px 24px', borderRadius: '12px', background: '#22c55e', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '700' }}>💬 Abrir Chat</button>
+                
+                {/* CORRECCIÓN: Link dinámico para abrir el chat */}
+                <Link href={`/chat/${selectedPatient.id}`} passHref>
+                  <button style={{ padding: '12px 24px', borderRadius: '12px', background: '#22c55e', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '700' }}>
+                    💬 Abrir Chat
+                  </button>
+                </Link>
               </div>
             </header>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '30px' }}>
-              
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
                 
-                {/* PANEL DE CONTROL DE PROGRESO (NUEVO) */}
+                {/* PANEL DE CONTROL DE PROGRESO */}
                 <div style={{ background: 'white', padding: '25px', borderRadius: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #e2e8f0' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800' }}>🎛️ Control de Objetivos Reales</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
@@ -169,7 +175,7 @@ export default function MedicalDashboard() {
                             type="range" min="0" max="100" 
                             value={selectedPatient[item.field] || 0}
                             onChange={(e) => updateBiometricProgress(item.field, e.target.value)}
-                            style={{ flex: 1, accentColor: item.color }}
+                            style={{ flex: 1, accentColor: item.color, cursor: 'pointer' }}
                           />
                           <span style={{ fontSize: '12px', fontWeight: '800', width: '35px' }}>{selectedPatient[item.field] || 0}%</span>
                         </div>
@@ -208,15 +214,15 @@ export default function MedicalDashboard() {
               {/* COLUMNA DERECHA: RETOS */}
               <div style={{ background: 'white', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800' }}>🎯 Checkbox de Retos</h3>
-                {challenges.map(c => (
+                {challenges.length > 0 ? challenges.map(c => (
                   <div key={c.id} style={{ 
                     padding: '12px', background: c.is_completed ? '#f0fdf4' : '#f8fafc', 
                     borderRadius: '12px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '12px'
                   }}>
-                    <input type="checkbox" checked={c.is_completed} onChange={() => toggleChallenge(c.id, c.is_completed)} style={{ width: '18px', height: '18px', accentColor: '#22c55e' }} />
+                    <input type="checkbox" checked={c.is_completed} onChange={() => toggleChallenge(c.id, c.is_completed)} style={{ width: '18px', height: '18px', accentColor: '#22c55e', cursor: 'pointer' }} />
                     <span style={{ fontSize: '13px', fontWeight: '600', textDecoration: c.is_completed ? 'line-through' : 'none', color: c.is_completed ? '#94a3b8' : '#1e293b' }}>{c.title}</span>
                   </div>
-                ))}
+                )) : <p style={{ color: '#94a3b8', fontSize: '13px' }}>No hay retos asignados.</p>}
               </div>
 
             </div>
