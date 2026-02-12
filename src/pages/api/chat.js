@@ -10,26 +10,35 @@ export default async function handler(req, res) {
 
   const { userMessage, patientId, systemPrompt: patientContext } = req.body;
 
-  // NUEVAS REGLAS MAESTRAS: "Modo Nutricionista Experto"
-  const masterRules = `Eres el Especialista Principal de Salud360. Tu misión es ser un asistente de salud altamente accionable y experto.
+  // 1. Lógica para manejar el saludo automático proactivo
+  let cleanUserMessage = userMessage;
+  let extraGreetingInstruction = "";
+
+  if (userMessage === "[SALUDO_INICIAL_SISTEMA]") {
+    // Si es el disparo automático, vaciamos el mensaje del usuario 
+    // y le damos una instrucción clara de "empezar a hablar ella sola"
+    cleanUserMessage = "Hola, preséntate y hazme las preguntas iniciales según tus instrucciones.";
+    extraGreetingInstruction = " IMPORTANTE: Es el inicio del día. No esperes a que yo diga nada, toma la iniciativa.";
+  }
+
+  // 2. REGLAS MAESTRAS ACTUALIZADAS (Con soporte para extracción de datos)
+  const masterRules = `Eres el Especialista Principal de Salud360. Tu misión es ser un asistente de salud experto y proactivo.
+
+  INSTRUCCIONES DE REGISTRO BIOMÉTRICO:
+  - Si el usuario menciona su peso, horas de sueño o nivel de estrés (1-10), DEBES incluir al final de tu respuesta EXACTAMENTE este formato: [UPDATE:weight=XX,sleep_hours=XX,stress_level=XX]. 
+  - Sustituye XX solo por el valor numérico mencionado. Si no menciona alguno, deja XX.
+  - Ejemplo: Si dice "peso 80kg", añades [UPDATE:weight=80,sleep_hours=XX,stress_level=XX].
 
   INSTRUCCIONES CRÍTICAS:
-  1. ANALIZA Y PERSONALIZA: Usa SIEMPRE los datos del paciente (Peso, Actividad, Dieta, Estrés) para que tus consejos no sean genéricos.
-  2. PROPORCIONA CONTENIDO DETALLADO: Si el usuario te pide un menú semanal, una receta o un plan de ejercicios, DEBES proporcionarlo con detalle. Usa tablas o listas de Markdown para que sea legible. No pongas excusas sobre "no poder dar menús".
-  3. EDUCA CON CIENCIA: Explica brevemente por qué recomiendas algo basado en sus biométricas (ej: "Debido a tu nivel de actividad sedentario, priorizaremos proteínas magras...").
-  4. FORMATO DE RETO: Al final de cada interacción, asigna OBLIGATORIAMENTE un reto usando exactamente el formato: [RETO: Nombre del Reto].
+  1. ANALIZA Y PERSONALIZA: Usa los datos del paciente (Peso, IMC, Calorías) para tus consejos.
+  2. CONTENIDO DETALLADO: Proporciona menús, tablas y planes sin excusas.
+  3. FORMATO DE RETO: Al final de cada interacción (salvo en el saludo inicial), asigna: [RETO: Nombre del Reto].
 
-  TONO Y ESTILO:
-  - Autoritario, profesional y muy motivador.
-  - No uses frases introductorias largas como "Como IA no puedo...". Ve al grano.
-  - Usa negritas para resaltar puntos clave.
+  TONO: Profesional, motivador y directo. Usa negritas.
+  
+  LISTA DE RETOS: Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, Desayuno proteico, Ayuno 12h.`;
 
-  LISTA DE RETOS DISPONIBLES:
-  Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, 
-  Desayuno proteico, Masticación consciente, Cero azúcares líquidos, Snack frutos secos, 
-  Reducción de sal, Ayuno 12h.`;
-
-  const finalSystemPrompt = `${masterRules}\n\n${patientContext}`;
+  const finalSystemPrompt = `${masterRules}\n\n${patientContext}${extraGreetingInstruction}`;
 
   try {
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -42,10 +51,10 @@ export default async function handler(req, res) {
         model: "llama-3.3-70b-versatile", 
         messages: [
           { role: "system", content: finalSystemPrompt },
-          { role: "user", content: userMessage }
+          { role: "user", content: cleanUserMessage }
         ],
-        temperature: 0.7, // Mantiene un equilibrio entre creatividad y precisión médica
-        max_tokens: 1000  // Aumentamos a 1000 para que los menús no se corten
+        temperature: 0.6, 
+        max_tokens: 1000  
       })
     });
 
