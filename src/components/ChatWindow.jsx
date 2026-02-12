@@ -5,7 +5,9 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-// Importación dinámica del visualizador
+// 1. IMPORTACIÓN DEL NUEVO COMPONENTE (Asegúrate de haber creado FoodTracker.jsx)
+import FoodTracker from './FoodTracker';
+
 const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
   ssr: false,
   loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '20px' }} />
@@ -16,34 +18,37 @@ export default function ChatWindow({ patientId }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [patientData, setPatientData] = useState(null);
+  const [dailyCalories, setDailyCalories] = useState(0); // Estado para el contador
   const messagesEndRef = useRef(null);
 
-  // Cargar datos del paciente e historial de chat
-  useEffect(() => {
-    const loadAllData = async () => {
-      if (!patientId) return;
-      
-      const { data: pData } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patientId)
-        .single();
-      
-      if (pData) setPatientData(pData);
-
-      const { data: cData } = await supabase
-        .from('chat_history')
-        .select('role, message')
-        .eq('patient_id', patientId)
-        .order('created_at', { ascending: true });
-      
-      if (cData && cData.length > 0) setMessages(cData);
-    };
+  // Cargar datos iniciales
+  const loadAllData = async () => {
+    if (!patientId) return;
     
+    // Datos del paciente
+    const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
+    if (pData) setPatientData(pData);
+
+    // Historial de chat
+    const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
+    if (cData && cData.length > 0) setMessages(cData);
+
+    // Cargar calorías del día (hoy)
+    const today = new Date().toISOString().split('T')[0];
+    const { data: fData } = await supabase
+      .from('food_logs')
+      .select('calories')
+      .eq('patient_id', patientId)
+      .gte('created_at', today);
+    
+    const total = fData?.reduce((acc, curr) => acc + curr.calories, 0) || 0;
+    setDailyCalories(total);
+  };
+
+  useEffect(() => {
     loadAllData();
   }, [patientId]);
 
-  // Auto-scroll al último mensaje
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -59,15 +64,11 @@ export default function ChatWindow({ patientId }) {
 
     try {
       const patientContext = patientData ? `
-        DATOS ACTUALES DEL PACIENTE:
+        DATOS ACTUALES:
         - Nombre: ${patientData.name}
-        - Edad: ${patientData.age} años
-        - Sexo: ${patientData.gender}
         - Peso: ${patientData.weight}kg
-        - Altura: ${patientData.height}cm
-        - Nivel de Actividad: ${patientData.activity_level || 'Moderado'}
-        - Objetivo de Salud: ${patientData.health_goal}
-        - Estrés: ${patientData.stress_level}/10
+        - Objetivo: ${patientData.health_goal}
+        - Calorías consumidas hoy: ${dailyCalories} kcal
       ` : "";
 
       const response = await fetch('/api/chat', {
@@ -76,32 +77,23 @@ export default function ChatWindow({ patientId }) {
         body: JSON.stringify({ 
           patientId, 
           userMessage: userText,
-          systemPrompt: `Eres un asistente clínico avanzado. 
-          ${patientContext}
-          REGLAS DE RESPUESTA:
-          1. YA CONOCES los datos biométricos. NUNCA los preguntes.
-          2. Usa tablas Markdown para menús/rutinas.
-          3. Sé conciso y profesional.`
+          systemPrompt: `Eres un asistente clínico. ${patientContext} 
+          REGLAS: 1. No preguntes datos que ya tienes. 2. Si el usuario consumió muchas calorías, sugiere cenas ligeras en tablas.`
         })
       });
 
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
-
-      await supabase.from('chat_history').insert([
-        { patient_id: patientId, role: 'user', message: userText }, 
-        { patient_id: patientId, role: 'assistant', message: data.message }
-      ]);
-
+      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }, { patient_id: patientId, role: 'assistant', message: data.message }]);
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
   const AchievementCard = ({ label, value, color, icon, detail }) => (
-    <div style={{ background: 'white', padding: '16px', borderRadius: '16px', marginBottom: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9' }}>
+    <div style={{ background: 'white', padding: '16px', borderRadius: '16px', marginBottom: '12px', border: '1px solid #f1f5f9' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
         <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>{icon}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{label}</div>
+          <div style={{ fontSize: '13px', fontWeight: '700' }}>{label}</div>
           <div style={{ fontSize: '11px', color: '#64748b' }}>{detail}</div>
         </div>
         <div style={{ fontSize: '13px', fontWeight: '800', color: color }}>{value}%</div>
@@ -115,20 +107,27 @@ export default function ChatWindow({ patientId }) {
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', background: '#f8fafc', overflow: 'hidden' }}>
       
-      {/* PANEL LATERAL */}
       <aside style={{ width: '400px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
-        <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+        <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
           <BiometricVisualizer patientData={patientData} />
         </div>
 
-        <div style={{ marginTop: '24px' }}>
+        {/* 2. REGISTRO DE COMIDAS (Punto 1 implementado) */}
+        <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+
+        <div style={{ marginTop: '10px' }}>
           <h4 style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', marginBottom: '16px' }}>ESTADO DE OBJETIVOS</h4>
-          <AchievementCard label="Actividad" detail="Progreso semanal" value={patientData?.progress_activity || 0} color="#3b82f6" icon="🏃" />
-          <AchievementCard label="Hidratación" detail="Consumo diario" value={patientData?.progress_hydration || 0} color="#0ea5e9" icon="💧" />
-          <AchievementCard label="Calma" detail="Nivel de estrés" value={100 - (patientData?.progress_stress || 0)} color="#8b5cf6" icon="🧘" />
+          {/* Mostramos el contador de calorías como un logro */}
+          <AchievementCard 
+            label="Calorías Hoy" 
+            detail={`${dailyCalories} kcal registradas`} 
+            value={Math.min((dailyCalories / 2000) * 100, 100)} 
+            color="#f59e0b" 
+            icon="🍽️" 
+          />
+          <AchievementCard label="Actividad" value={patientData?.progress_activity || 0} color="#3b82f6" icon="🏃" detail="Progreso semanal" />
         </div>
 
-        {/* SECCIÓN DE BOTONES INFERIORES ACTUALIZADA */}
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '20px' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => window.print()} style={{ flex: 1, padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}>📄 Exportar</button>
@@ -136,16 +135,12 @@ export default function ChatWindow({ patientId }) {
               <button style={{ width: '100%', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '13px', color: '#0f172a' }}>Panel Médico</button>
             </Link>
           </div>
-          
           <Link href="/" style={{ textDecoration: 'none' }}>
-            <button style={{ width: '100%', padding: '14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
-              🔴 Finalizar Sesión
-            </button>
+            <button style={{ width: '100%', padding: '14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>🔴 Finalizar Sesión</button>
           </Link>
         </div>
       </aside>
 
-      {/* ÁREA DE CHAT */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {messages.map((msg, idx) => (
@@ -154,15 +149,14 @@ export default function ChatWindow({ patientId }) {
               background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
               padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
               maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0',
-              border: '1px solid #f1f5f9',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)', fontSize: '14px'
+              border: '1px solid #f1f5f9', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', fontSize: '14px'
             }}>
               <div className="markdown-container">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
               </div>
             </div>
           ))}
-          {loading && <div style={{ color: '#94a3b8', fontSize: '12px' }}>IA analizando biométricas...</div>}
+          {loading && <div style={{ color: '#94a3b8', fontSize: '12px' }}>IA analizando datos...</div>}
           <div ref={messagesEndRef} />
         </div>
 
@@ -170,7 +164,7 @@ export default function ChatWindow({ patientId }) {
           <input 
             style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }}
             value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Pide un menú clínico..."
+            placeholder="Pide un menú o consejo clínico..."
           />
           <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>Enviar</button>
         </form>
