@@ -15,24 +15,33 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // O el modelo de Groq que prefieras
+        model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: "Responde exclusivamente en formato JSON puro." },
-          { role: "user", content: `Analiza nutricionalmente: "${foodText}". 
-            Retorna solo este JSON: {"calories": número, "nutrients": {"proteinas": "Xg", "carbohidratos": "Xg", "grasas": "Xg"}}` }
+          { 
+            role: "system", 
+            content: `Eres un nutricionista experto que extrae datos en JSON. 
+            Clasifica la comida en una de estas categorías: Desayuno, Almuerzo, Comida, Merienda, Cena, Otros.
+            Ten en cuenta el contexto del texto para elegir la categoría.` 
+          },
+          { 
+            role: "user", 
+            content: `Analiza: "${foodText}". 
+            Retorna UNICAMENTE este JSON: 
+            {
+              "calories": número, 
+              "category": "Categoría elegida",
+              "nutrients": {"proteinas": "Xg", "carbohidratos": "Xg", "grasas": "Xg"}
+            }` 
+          }
         ],
         temperature: 0
       })
     });
 
     const data = await response.json();
-
     if (data.error) throw new Error(data.error.message);
 
-    // Groq a veces es tan rápido que el parseo es directo
     const content = data.choices[0].message.content.trim();
-    
-    // Limpieza de posibles marcas de markdown que Groq pueda incluir
     const jsonString = content.replace(/```json|```/g, "");
     const cleanJson = JSON.parse(jsonString);
 
