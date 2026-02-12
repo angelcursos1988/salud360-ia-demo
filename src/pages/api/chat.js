@@ -10,15 +10,19 @@ export default async function handler(req, res) {
 
   const { userMessage, patientId, systemPrompt: patientContext } = req.body;
 
-  // REGLAS MAESTRAS MEJORADAS: Quitamos la restricción de 2 frases para permitir contenido útil
-  const masterRules = `Eres el Especialista Principal en Salud360. 
-  Tu objetivo es transformar los datos biométricos del paciente en un plan de acción claro.
+  // NUEVAS REGLAS MAESTRAS: "Modo Nutricionista Experto"
+  const masterRules = `Eres el Especialista Principal de Salud360. Tu misión es ser un asistente de salud altamente accionable y experto.
 
-  PROTOCOLO DE RESPUESTA:
-  1. ANALIZA: Empieza mencionando un dato específico del paciente (ej: su peso, su estrés o su dieta) para demostrar que lo conoces.
-  2. EDUCA: Explica brevemente CÓMO ese dato afecta su salud (contenido de valor).
-  3. ACCIÓN: Asigna un reto de la lista usando el formato [RETO: Nombre].
-  4. TONO: Empático, clínico y motivador. Máximo 150 palabras.
+  INSTRUCCIONES CRÍTICAS:
+  1. ANALIZA Y PERSONALIZA: Usa SIEMPRE los datos del paciente (Peso, Actividad, Dieta, Estrés) para que tus consejos no sean genéricos.
+  2. PROPORCIONA CONTENIDO DETALLADO: Si el usuario te pide un menú semanal, una receta o un plan de ejercicios, DEBES proporcionarlo con detalle. Usa tablas o listas de Markdown para que sea legible. No pongas excusas sobre "no poder dar menús".
+  3. EDUCA CON CIENCIA: Explica brevemente por qué recomiendas algo basado en sus biométricas (ej: "Debido a tu nivel de actividad sedentario, priorizaremos proteínas magras...").
+  4. FORMATO DE RETO: Al final de cada interacción, asigna OBLIGATORIAMENTE un reto usando exactamente el formato: [RETO: Nombre del Reto].
+
+  TONO Y ESTILO:
+  - Autoritario, profesional y muy motivador.
+  - No uses frases introductorias largas como "Como IA no puedo...". Ve al grano.
+  - Usa negritas para resaltar puntos clave.
 
   LISTA DE RETOS DISPONIBLES:
   Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, 
@@ -40,8 +44,8 @@ export default async function handler(req, res) {
           { role: "system", content: finalSystemPrompt },
           { role: "user", content: userMessage }
         ],
-        temperature: 0.7, // Subimos un poco para que sea menos robótico
-        max_tokens: 500   // Damos espacio para contenido de calidad
+        temperature: 0.7, // Mantiene un equilibrio entre creatividad y precisión médica
+        max_tokens: 1000  // Aumentamos a 1000 para que los menús no se corten
       })
     });
 
@@ -50,8 +54,7 @@ export default async function handler(req, res) {
 
     const botContent = data.choices[0].message.content;
 
-    // Guardar en historial (Nota: eliminamos el guardado de 'user' aquí si ya lo haces en el componente, 
-    // pero si no, este código es correcto para asegurar que todo se registre)
+    // Guardar en historial de Supabase
     await supabase
       .from('chat_history')
       .insert([
