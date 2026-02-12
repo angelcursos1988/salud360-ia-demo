@@ -10,17 +10,10 @@ export default function Home() {
   const router = useRouter();
 
   const [formData, setFormData] = useState({
-    age: '', 
-    height: '', 
-    weight: '', 
-    sleep_hours: '',
-    stress_level: '5', 
-    diet_type: 'omnivoro',
-    gender: 'otro', // Nuevo
-    activity: 'moderado', // Nuevo
-    health_goal: 'estar saludable', 
-    allergies: '', 
-    medical_conditions: ''
+    age: '', height: '', weight: '', sleep_hours: '',
+    stress_level: '5', diet_type: 'omnivoro', gender: 'otro',
+    activity: 'moderado', health_goal: 'estar saludable', 
+    allergies: '', medical_conditions: ''
   });
 
   const handleCheckUser = async (e) => {
@@ -36,8 +29,15 @@ export default function Home() {
         .maybeSingle();
 
       if (patient) {
+        // --- LÓGICA DE SALTO DIRECTO ---
+        // Si el usuario ya tiene datos base (edad y altura), lo mandamos directo al chat
+        if (patient.age && patient.height) {
+          router.push(`/chat?id=${patient.id}`);
+          return; // Salimos de la función para evitar el cambio de step
+        }
+
+        // Si existe pero le faltan datos base, vamos al onboarding
         setPatientId(patient.id);
-        // Pre-cargamos los datos estáticos que ya conocemos
         setFormData({
           ...formData,
           age: patient.age || '',
@@ -46,18 +46,16 @@ export default function Home() {
           activity: patient.activity || 'moderado',
           diet_type: patient.diet_type || 'omnivoro',
           health_goal: patient.health_goal || 'estar saludable',
-          weight: '', // Vacío para obligar a actualizar hoy
-          sleep_hours: '', 
-          stress_level: '5',
         });
-        setStep('checkin');
+        setStep('onboarding'); 
       } else {
+        // Si no existe en absoluto, onboarding total
         setStep('onboarding');
       }
     } catch (error) {
       console.error("Error al buscar usuario:", error);
     } finally {
-      setLoading(false);
+      if (step === 'login') setLoading(false);
     }
   };
 
@@ -76,43 +74,39 @@ export default function Home() {
         sleep_hours: parseInt(formData.sleep_hours) || 0,
         stress_level: parseInt(formData.stress_level) || 5,
         diet_type: formData.diet_type || 'omnivoro',
-        gender: formData.gender, // Nuevo
-        activity: formData.activity, // Nuevo
+        gender: formData.gender,
+        activity: formData.activity,
         health_goal: formData.health_goal || 'bienestar',
         allergies: formData.allergies || '',
         medical_conditions: formData.medical_conditions || '',
         updated_at: new Date().toISOString()
       };
 
-      if (step === 'onboarding') {
+      if (!patientId) {
+        // Inserción nueva
         const { data: newP, error: insertError } = await supabase
           .from('patients')
           .insert([dataToSave])
           .select()
           .single();
-        
         if (insertError) throw insertError;
         currentId = newP.id;
       } else {
+        // Actualización
         const { error: updateError } = await supabase
           .from('patients')
           .update(dataToSave)
           .eq('id', patientId);
-        
         if (updateError) throw updateError;
       }
 
-      // Guardado en Historial para gráficas
-      try {
-        await supabase.from('health_logs').insert([{
-          patient_id: currentId,
-          weight: parseFloat(formData.weight) || 0,
-          stress_level: parseInt(formData.stress_level) || 5,
-          sleep_hours: parseInt(formData.sleep_hours) || 0
-        }]);
-      } catch (logErr) {
-        console.warn("Error en historial:", logErr);
-      }
+      // Registro en el historial
+      await supabase.from('health_logs').insert([{
+        patient_id: currentId,
+        weight: parseFloat(formData.weight) || 0,
+        stress_level: parseInt(formData.stress_level) || 5,
+        sleep_hours: parseInt(formData.sleep_hours) || 0
+      }]);
 
       router.push(`/chat?id=${currentId}`);
     } catch (error) {
@@ -125,9 +119,10 @@ export default function Home() {
 
   const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
+  // Estilos (se mantienen igual que los tuyos)
   const cardStyle = { background: 'white', padding: '40px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', width: '100%', maxWidth: '450px' };
   const inputStyle = { width: '100%', padding: '14px', marginBottom: '15px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '15px', outline: 'none', background: '#f8fafc' };
-  const btnStyle = { width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: '#27ae60', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px', boxShadow: '0 4px 10px rgba(39, 174, 96, 0.2)' };
+  const btnStyle = { width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: '#27ae60', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' };
   const labelStyle = { fontSize: '12px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '5px' };
 
   return (
@@ -146,64 +141,45 @@ export default function Home() {
           </form>
         )}
 
-        {(step === 'onboarding' || step === 'checkin') && (
+        {step === 'onboarding' && (
           <form onSubmit={handleSaveData}>
-            <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '20px' }}>
-              {step === 'onboarding' ? 'Crear Perfil Médico' : 'Check-in de hoy'}
-            </h2>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '25px' }}>
-              {step === 'onboarding' ? 'Necesitamos tus datos base.' : 'Actualiza tus métricas diarias.'}
-            </p>
+            <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '20px' }}>Configurar Perfil</h2>
+            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '25px' }}>Solo necesitamos estos datos una vez.</p>
             
+            <div style={{display: 'flex', gap: '10px'}}>
+              <div style={{flex: 1}}>
+                <label style={labelStyle}>Edad</label>
+                <input name="age" type="number" style={inputStyle} value={formData.age} onChange={handleInputChange} required />
+              </div>
+              <div style={{flex: 1}}>
+                <label style={labelStyle}>Altura (cm)</label>
+                <input name="height" type="number" style={inputStyle} value={formData.height} onChange={handleInputChange} required />
+              </div>
+            </div>
+
             <label style={labelStyle}>Peso Actual (kg)</label>
             <input name="weight" type="number" step="0.1" style={inputStyle} value={formData.weight} onChange={handleInputChange} required />
-            
-            <label style={labelStyle}>Nivel de Estrés: {formData.stress_level}/10</label>
-            <input name="stress_level" type="range" min="1" max="10" style={{...inputStyle, padding: '5px'}} value={formData.stress_level} onChange={handleInputChange} />
             
             <label style={labelStyle}>Horas de sueño</label>
             <input name="sleep_hours" type="number" style={inputStyle} value={formData.sleep_hours} onChange={handleInputChange} required />
 
-            {step === 'onboarding' && (
-              <>
-                <div style={{display: 'flex', gap: '10px'}}>
-                  <div style={{flex: 1}}>
-                    <label style={labelStyle}>Edad</label>
-                    <input name="age" type="number" style={inputStyle} onChange={handleInputChange} required />
-                  </div>
-                  <div style={{flex: 1}}>
-                    <label style={labelStyle}>Altura (cm)</label>
-                    <input name="height" type="number" style={inputStyle} onChange={handleInputChange} required />
-                  </div>
-                </div>
+            <label style={labelStyle}>Nivel de actividad</label>
+            <select name="activity" style={inputStyle} onChange={handleInputChange} value={formData.activity}>
+              <option value="sedentario">Sedentario</option>
+              <option value="moderado">Moderado</option>
+              <option value="activo">Activo</option>
+              <option value="atleta">Atleta</option>
+            </select>
 
-                <label style={labelStyle}>Sexo biológico</label>
-                <select name="gender" style={inputStyle} onChange={handleInputChange} value={formData.gender}>
-                  <option value="hombre">Hombre</option>
-                  <option value="mujer">Mujer</option>
-                  <option value="otro">Otro / Prefiero no decir</option>
-                </select>
+            <label style={labelStyle}>Tipo de dieta</label>
+            <select name="diet_type" style={inputStyle} onChange={handleInputChange} value={formData.diet_type}>
+              <option value="omnivoro">Omnívoro</option>
+              <option value="vegetariano">Vegetariano</option>
+              <option value="vegano">Vegano</option>
+              <option value="keto">Keto</option>
+            </select>
 
-                <label style={labelStyle}>Nivel de actividad</label>
-                <select name="activity" style={inputStyle} onChange={handleInputChange} value={formData.activity}>
-                  <option value="sedentario">Sedentario (Poco ejercicio)</option>
-                  <option value="moderado">Moderado (3 veces/semana)</option>
-                  <option value="activo">Activo (Diario)</option>
-                  <option value="atleta">Atleta / Alto Rendimiento</option>
-                </select>
-
-                <label style={labelStyle}>Tipo de dieta</label>
-                <select name="diet_type" style={inputStyle} onChange={handleInputChange} value={formData.diet_type}>
-                  <option value="omnivoro">Omnívoro</option>
-                  <option value="vegetariano">Vegetariano</option>
-                  <option value="vegano">Vegano</option>
-                  <option value="keto">Keto</option>
-                </select>
-              </>
-            )}
-
-            <button style={btnStyle}>{loading ? 'Guardando...' : 'Confirmar y Entrar'}</button>
-            <p onClick={() => setStep('login')} style={{ textAlign: 'center', color: '#94a3b8', cursor: 'pointer', marginTop: '15px', fontSize: '12px' }}>Atrás</p>
+            <button style={btnStyle}>{loading ? 'Guardando...' : 'Comenzar experiencia'}</button>
           </form>
         )}
       </div>
