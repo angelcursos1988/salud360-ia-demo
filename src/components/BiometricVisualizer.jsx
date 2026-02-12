@@ -2,55 +2,75 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { useRef, useMemo } from 'react';
 import * as THREE from 'three';
 
-function StatusMesh({ stress, age, weight }) {
-  const meshRef = useRef();
-  
-  // Color basado en estrés (Verde a Rojo)
+function HumanoidMesh({ stress, age, weight }) {
+  const groupRef = useRef();
+
+  // Color basado en estrés
   const color = useMemo(() => {
-    const hue = ((10 - Number(stress)) * 12) / 360; 
+    const hue = ((10 - Number(stress)) * 12) / 360;
     return new THREE.Color().setHSL(hue, 0.8, 0.5);
   }, [stress]);
 
-  // Geometría basada en edad
-  const detail = useMemo(() => {
-    const a = Number(age);
-    if (a < 20) return 12;
-    if (a < 50) return 32;
-    return 64; 
-  }, [age]);
-
-  // Escala basada en peso
-  const baseScale = useMemo(() => {
-    const w = Number(weight);
-    return Math.max(0.5, Math.min(w / 70, 2.5));
+  // Escala basada en peso (afecta al grosor del torso)
+  const bodyWidth = useMemo(() => {
+    return Math.max(0.7, Math.min(Number(weight) / 70, 1.5));
   }, [weight]);
 
   useFrame((state) => {
-    if (!meshRef.current) return;
+    if (!groupRef.current) return;
     const time = state.clock.getElapsedTime();
-    
-    meshRef.current.rotation.y += 0.005 + (Number(stress) * 0.02);
-    meshRef.current.rotation.x += 0.005;
 
-    const pulseSpeed = Number(stress) > 7 ? 8 : 2;
-    const pulseAmount = Number(stress) > 7 ? 0.15 : 0.05;
-    const s = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
-    
-    meshRef.current.scale.set(s, s, s);
+    // Rotación suave
+    groupRef.current.rotation.y += 0.01;
+
+    // Latido (vibración por estrés)
+    const pulse = Math.sin(time * (Number(stress) > 7 ? 8 : 2)) * 0.05;
+    groupRef.current.position.y = pulse;
   });
 
+  const materialProps = {
+    color: color,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.6,
+    emissive: color,
+    emissiveIntensity: Number(stress) / 8
+  };
+
   return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[1.5, detail, detail]} />
-      <meshStandardMaterial 
-        color={color} 
-        wireframe 
-        transparent
-        opacity={0.8}
-        emissive={color}
-        emissiveIntensity={Number(stress) / 10}
-      />
-    </mesh>
+    <group ref={groupRef} position={[0, -1, 0]}>
+      {/* CABEZA */}
+      <mesh position={[0, 2.8, 0]}>
+        <sphereGeometry args={[0.3, 16, 16]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+
+      {/* TORSO (Cambia con el peso) */}
+      <mesh position={[0, 1.8, 0]}>
+        <capsuleGeometry args={[0.4 * bodyWidth, 1, 4, 16]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+
+      {/* BRAZOS */}
+      <mesh position={[-0.7, 2, 0]} rotation={[0, 0, 0.2]}>
+        <capsuleGeometry args={[0.15, 0.8, 4, 12]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+      <mesh position={[0.7, 2, 0]} rotation={[0, 0, -0.2]}>
+        <capsuleGeometry args={[0.15, 0.8, 4, 12]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+
+      {/* PIERNAS */}
+      <mesh position={[-0.3, 0.6, 0]}>
+        <capsuleGeometry args={[0.18, 1, 4, 12]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+      <mesh position={[0.3, 0.6, 0]}>
+        <capsuleGeometry args={[0.18, 1, 4, 12]} />
+        <meshStandardMaterial {...materialProps} />
+      </mesh>
+    </group>
   );
 }
 
@@ -60,24 +80,23 @@ export default function BiometricVisualizer({ patientData }) {
   return (
     <div style={{ 
       width: '100%', 
-      height: '300px', 
-      background: 'radial-gradient(circle, #ffffff 0%, #f1f5f9 100%)', 
+      height: '350px', 
+      background: 'radial-gradient(circle, #1e293b 0%, #0f172a 100%)', // Fondo oscuro para resaltar la malla
       borderRadius: '20px',
-      border: '1px solid #e2e8f0',
       overflow: 'hidden',
       position: 'relative'
     }}>
       <div style={{
         position: 'absolute', top: '15px', left: '15px', zIndex: 1,
-        fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase'
+        fontSize: '10px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase'
       }}>
-        Análisis Biométrico 3D v1.0
+        Escaneo Biométrico Corporal v2.0
       </div>
       
-      <Canvas camera={{ position: [0, 0, 5] }}>
+      <Canvas camera={{ position: [0, 1, 6], fov: 45 }}>
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} intensity={1.5} />
-        <StatusMesh 
+        <HumanoidMesh 
           stress={patientData.stress_level || 0} 
           age={patientData.age || 30} 
           weight={patientData.weight || 70} 
