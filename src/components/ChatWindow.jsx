@@ -19,44 +19,29 @@ export default function ChatWindow({ patientId }) {
   const [foodLogs, setFoodLogs] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasGreeted, setHasGreeted] = useState(false);
-  
-  // NUEVO: Estado para la fecha seleccionada (por defecto hoy)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  
   const messagesEndRef = useRef(null);
 
   const loadAllData = async () => {
     if (!patientId) return;
     try {
-      // 1. Datos del paciente
       const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
       if (pData) setPatientData(pData);
 
-      // 2. Historial de chat (todos los mensajes)
       const { data: cData } = await supabase.from('chat_history').select('role, message')
         .eq('patient_id', patientId).order('created_at', { ascending: true });
       if (cData) setMessages(cData);
 
-      // 3. Cargar logs de comida filtrados por la FECHA SELECCIONADA
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
       const endOfDay = `${selectedDate}T23:59:59.999Z`;
 
-      const { data: fData } = await supabase
-        .from('food_logs')
-        .select('*')
-        .eq('patient_id', patientId)
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay);
+      const { data: fData } = await supabase.from('food_logs').select('*')
+        .eq('patient_id', patientId).gte('created_at', startOfDay).lte('created_at', endOfDay);
       
       if (fData) setFoodLogs(fData);
-    } catch (err) { 
-      console.error("Error cargando datos:", err); 
-    } finally { 
-      setIsInitialLoading(false); 
-    }
+    } catch (err) { console.error(err); } finally { setIsInitialLoading(false); }
   };
 
-  // Recargar datos cuando cambie la fecha o el ID del paciente
   useEffect(() => { loadAllData(); }, [patientId, selectedDate]);
 
   useEffect(() => {
@@ -113,7 +98,6 @@ export default function ChatWindow({ patientId }) {
         });
         if (Object.keys(updates).length > 0) {
           await supabase.from('patients').update(updates).eq('id', patientId);
-          // Insertamos log de salud con la fecha actual
           await supabase.from('health_logs').insert([{ patient_id: patientId, ...updates }]);
           loadAllData();
         }
@@ -123,7 +107,6 @@ export default function ChatWindow({ patientId }) {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // Lógica nutricional
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const imcReal = (heightCm > 0) ? (weight / ((heightCm / 100) ** 2)).toFixed(1) : "0.0";
@@ -144,97 +127,111 @@ export default function ChatWindow({ patientId }) {
     <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         
-        {/* SELECTOR DE FECHA */}
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', display: 'block', marginBottom: '5px' }}>FECHA DE CONSULTA</label>
-          <input 
-            type="date" 
-            value={selectedDate} 
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '14px', fontWeight: '600', color: '#1e293b', outline: 'none' }}
-          />
-        </div>
-
+        {/* VISUALIZADOR */}
         <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
           <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
 
-        <div style={{ background: '#1e293b', padding: '18px', borderRadius: '20px', marginBottom: '15px', color: 'white' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center' }}>
+        {/* --- PANEL DE CONTROL OSCURO UNIFICADO --- */}
+        <div style={{ background: '#1e293b', padding: '18px', borderRadius: '20px', marginBottom: '15px', color: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}>
+          
+          {/* MÉTRICAS PRINCIPALES */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', marginBottom: '18px' }}>
             <div>
-              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800' }}>IMC REAL / IDEAL</div>
-              <div style={{ fontSize: '18px', fontWeight: '900', color: '#fbbf24' }}>{imcReal} <span style={{color:'#94a3b8', fontSize:'12px'}}>/ {imcIdeal}</span></div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em' }}>IMC ACTUAL / IDEAL</div>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#fbbf24' }}>{imcReal} <span style={{color:'#64748b', fontSize:'12px'}}>/ {imcIdeal}</span></div>
             </div>
             <div>
-              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800' }}>META CALORÍAS</div>
-              <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories}</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em' }}>OBJETIVO DIARIO</div>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#22c55e' }}>{recCalories} <span style={{fontSize:'10px', color:'#64748b'}}>kcal</span></div>
             </div>
+          </div>
+          
+          {/* SELECTOR DE FECHA INTEGRADO */}
+          <div style={{ borderTop: '1px solid #334155', paddingTop: '15px' }}>
+            <label style={{ fontSize: '9px', fontWeight: '800', color: '#94a3b8', display: 'block', marginBottom: '6px', textAlign: 'center' }}>FECHA DE REVISIÓN</label>
+            <input 
+              type="date" 
+              value={selectedDate} 
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '12px', border: '1px solid #334155', background: '#0f172a', color: 'white', fontSize: '13px', fontWeight: '600', outline: 'none', textAlign: 'center', cursor: 'pointer' }}
+            />
+          </div>
+
+          {/* ESTADO DEL TRACKER (Solo visible en el panel oscuro) */}
+          <div style={{ marginTop: '15px' }}>
+            {selectedDate === new Date().toISOString().split('T')[0] ? (
+              <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '10px', borderRadius: '12px' }}>
+                <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+              </div>
+            ) : (
+              <div style={{ padding: '12px', background: 'rgba(148, 163, 184, 0.1)', borderRadius: '12px', fontSize: '11px', color: '#94a3b8', textAlign: 'center', border: '1px dashed #334155' }}>
+                📅 Estás viendo el historial del día seleccionado
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Solo permitimos añadir comida si la fecha seleccionada es HOY */}
-        {selectedDate === new Date().toISOString().split('T')[0] ? (
-          <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
-        ) : (
-          <div style={{ padding: '12px', background: '#f1f5f9', borderRadius: '12px', fontSize: '12px', color: '#64748b', textAlign: 'center', marginBottom: '10px' }}>
-            Modo lectura (Historial)
-          </div>
-        )}
-
-        <div style={{ marginTop: '15px' }}>
+        {/* DESGLOSE DE COMIDAS (Estilo limpio) */}
+        <div style={{ flex: 1 }}>
+          <h3 style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', marginBottom: '10px', paddingLeft: '5px' }}>DESGLOSE NUTRICIONAL</h3>
           {Object.keys(targets).map((cat) => {
             const catItems = foodLogs.filter(f => f.category === cat);
             const catTotal = catItems.reduce((acc, curr) => acc + curr.calories, 0);
             return (
-              <details key={cat} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
-                <summary style={{ padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', listStyle:'none' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '700' }}>{cat}</span>
-                  <span style={{ fontSize: '13px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} / {targets[cat]}</span>
+              <details key={cat} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '8px', overflow: 'hidden' }}>
+                <summary style={{ padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', listStyle:'none', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{cat}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: catTotal > targets[cat] ? '#ef4444' : '#22c55e' }}>{catTotal} kcal</div>
+                    <div style={{ fontSize: '9px', color: '#94a3b8' }}>Meta: {targets[cat]}</div>
+                  </div>
                 </summary>
-                <div style={{ padding: '10px', background: '#f8fafc', borderTop:'1px solid #eee' }}>
+                <div style={{ padding: '12px', background: '#f8fafc', borderTop:'1px solid #f1f5f9' }}>
                   {catItems.length > 0 ? catItems.map((item, i) => (
-                    <div key={i} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                      <span>{item.description}</span>
-                      <span>{item.calories} kcal</span>
+                    <div key={i} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: i === catItems.length -1 ? 'none' : '1px solid #f1f5f9' }}>
+                      <span style={{ color: '#475569' }}>{item.description}</span>
+                      <span style={{ fontWeight: '700', color: '#1e293b' }}>{item.calories}</span>
                     </div>
-                  )) : <div style={{fontSize:'10px', color:'#94a3b8'}}>No hay registros</div>}
+                  )) : <div style={{fontSize:'10px', color:'#cbd5e1', fontStyle: 'italic'}}>No hay registros</div>}
                 </div>
               </details>
             );
           })}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
-          <button onClick={() => window.print()} style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>📄 Informe</button>
-          <Link href="/" style={{ textDecoration: 'none' }}>
-            <button style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>🚪 Salir</button>
-          </Link>
-        </div>
-
-        <div style={{ marginTop: '20px', padding: '15px', background: 'white', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '800' }}>
-             <span>RESUMEN DÍA</span>
-             <span>{dailyTotal} / {recCalories} kcal</span>
-           </div>
-           <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '10px', marginTop: '8px' }}>
-             <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px' }} />
-           </div>
+        {/* PIE DE SIDEBAR CON BOTONES Y PROGRESO */}
+        <div style={{ background: 'white', padding: '15px', borderRadius: '20px', border: '1px solid #e2e8f0', marginTop: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
+             <span>CONSUMO TOTAL</span>
+             <span style={{ color: dailyTotal > recCalories ? '#ef4444' : '#22c55e' }}>{dailyTotal} / {recCalories} kcal</span>
+          </div>
+          <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden', marginBottom: '15px' }}>
+             <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: dailyTotal > recCalories ? '#ef4444' : '#22c55e', borderRadius: '10px', transition: 'width 0.3s ease' }} />
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <button onClick={() => window.print()} style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>📄 INFORME</button>
+            <Link href="/" style={{ textDecoration: 'none' }}>
+              <button style={{ width: '100%', padding: '10px', background: '#fff1f2', color: '#ef4444', border: 'none', borderRadius: '10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🚪 SALIR</button>
+            </Link>
+          </div>
         </div>
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {messages.map((msg, idx) => (
-            <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', padding: '16px 20px', borderRadius: '20px', marginBottom: '16px', maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0', border: '1px solid #f1f5f9', fontSize: '14px' }}>
+            <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#f1f5f9' : '#ffffff', padding: '16px 20px', borderRadius: '20px', marginBottom: '16px', maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0', border: '1px solid #f1f5f9', fontSize: '14px', boxShadow: msg.role === 'user' ? 'none' : '0 2px 4px rgba(0,0,0,0.02)' }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             </div>
           ))}
-          {loading && <div style={{ fontSize: '12px', color: '#94a3b8', padding: '10px' }}>Salud360 respondiendo...</div>}
+          {loading && <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px', animate: 'pulse' }}>Salud360 está pensando...</div>}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
-          <input style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Escribe aquí..." />
-          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', border: 'none', cursor: 'pointer', fontWeight: '700' }}>Enviar</button>
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px', background: 'white' }}>
+          <input style={{ flex: 1, padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="¿Cómo te sientes hoy? ¿Alguna duda sobre tu dieta?" />
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 30px', borderRadius: '16px', border: 'none', cursor: 'pointer', fontWeight: '700', transition: '0.2s' }}>Enviar</button>
         </form>
       </main>
     </div>
