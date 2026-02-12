@@ -5,38 +5,35 @@ import * as THREE from 'three';
 function StatusMesh({ stress, age, weight }) {
   const meshRef = useRef();
   
-  // 1. Lógica de COLOR (Basada en Estrés)
+  // Color basado en estrés (Verde a Rojo)
   const color = useMemo(() => {
-    // 0 = Verde (HSL 120°), 10 = Rojo (HSL 0°)
-    const hue = ((10 - stress) * 12) / 360; 
+    const hue = ((10 - Number(stress)) * 12) / 360; 
     return new THREE.Color().setHSL(hue, 0.8, 0.5);
   }, [stress]);
 
-  // 2. Lógica de GEOMETRÍA (Basada en Edad)
-  // Pacientes jóvenes = formas simples. Pacientes mayores = redes complejas.
+  // Geometría basada en edad
   const detail = useMemo(() => {
-    if (age < 20) return 12;
-    if (age < 50) return 32;
-    return 64; // Alta densidad de red
+    const a = Number(age);
+    if (a < 20) return 12;
+    if (a < 50) return 32;
+    return 64; 
   }, [age]);
 
-  // 3. Lógica de ESCALA (Basada en Peso)
-  // Normalizamos el peso (ejemplo: 70kg es escala 1)
+  // Escala basada en peso
   const baseScale = useMemo(() => {
-    return Math.max(0.5, Math.min(weight / 70, 2.5));
+    const w = Number(weight);
+    return Math.max(0.5, Math.min(w / 70, 2.5));
   }, [weight]);
 
   useFrame((state) => {
+    if (!meshRef.current) return;
     const time = state.clock.getElapsedTime();
     
-    // Rotación según estrés
-    meshRef.current.rotation.y += 0.005 + (stress * 0.02);
+    meshRef.current.rotation.y += 0.005 + (Number(stress) * 0.02);
     meshRef.current.rotation.x += 0.005;
 
-    // Vibración (Latido clínico)
-    // Si hay mucho estrés ( > 7), el latido es errático y rápido
-    const pulseSpeed = stress > 7 ? 8 : 2;
-    const pulseAmount = stress > 7 ? 0.15 : 0.05;
+    const pulseSpeed = Number(stress) > 7 ? 8 : 2;
+    const pulseAmount = Number(stress) > 7 ? 0.15 : 0.05;
     const s = baseScale + Math.sin(time * pulseSpeed) * pulseAmount;
     
     meshRef.current.scale.set(s, s, s);
@@ -49,9 +46,9 @@ function StatusMesh({ stress, age, weight }) {
         color={color} 
         wireframe 
         transparent
-        opacity={0.9}
+        opacity={0.8}
         emissive={color}
-        emissiveIntensity={stress / 10}
+        emissiveIntensity={Number(stress) / 10}
       />
     </mesh>
   );
@@ -78,8 +75,8 @@ export default function BiometricVisualizer({ patientData }) {
       </div>
       
       <Canvas camera={{ position: [0, 0, 5] }}>
-        <ambientLight intensity={0.4} />
-        <pointLight position={[10, 10, 10]} intensity={1} />
+        <ambientLight intensity={0.5} />
+        <pointLight position={[10, 10, 10]} intensity={1.5} />
         <StatusMesh 
           stress={patientData.stress_level || 0} 
           age={patientData.age || 30} 
