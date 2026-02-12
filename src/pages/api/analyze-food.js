@@ -1,9 +1,20 @@
 export default async function handler(req, res) {
   const { foodText } = req.body;
 
-  const prompt = `Analiza el siguiente texto de comida y devuelve UNICAMENTE un objeto JSON con este formato: 
-  {"calories": número_estimado, "nutrients": {"proteinas": "gramos", "carbohidratos": "gramos", "grasas": "gramos"}}.
-  Texto: "${foodText}"`;
+  if (!foodText) {
+    return res.status(400).json({ error: "No se proporcionó texto de comida" });
+  }
+
+  const prompt = `Actúa como un nutricionista experto. Analiza el siguiente texto: "${foodText}". 
+  Devuelve ÚNICAMENTE un objeto JSON puro, sin texto adicional, con esta estructura:
+  {
+    "calories": número_entero_estimado,
+    "nutrients": {
+      "proteinas": "gramos",
+      "carbohidratos": "gramos",
+      "grasas": "gramos"
+    }
+  }`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -14,15 +25,29 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
+        messages: [{ role: "system", content: "Eres un extractor de datos nutricionales en formato JSON." }, { role: "user", content: prompt }],
+        temperature: 0.1 // Temperatura baja para que sea más preciso y no alucine
       })
     });
 
     const data = await response.json();
-    const result = JSON.parse(data.choices[0].message.content);
-    res.status(200).json(result);
+    
+    // Limpieza de seguridad por si la IA envía backticks o texto extra
+    let content = data.choices[0].message.content.trim();
+    if (content.includes("```json")) {
+      content = content.split("```json")[1].split("```")[0];
+    }
+    
+    const result = JSON.parse(content);
+    
+    // Devolvemos el resultado asegurándonos de que calories exista
+    res.status(200).json({
+      calories: result.calories || 0,
+      nutrients: result.nutrients || {}
+    });
+
   } catch (error) {
-    res.status(500).json({ error: "Error analizando nutrición" });
+    console.error("Error en API Analyze Food:", error);
+    res.status(500).json({ error: "Error analizando nutrición", details: error.message });
   }
 }
