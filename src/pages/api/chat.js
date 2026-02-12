@@ -6,39 +6,21 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { userMessage, patientId, systemPrompt: patientContext } = req.body;
 
-  // 1. Lógica para manejar el saludo automático proactivo
-  let cleanUserMessage = userMessage;
-  let extraGreetingInstruction = "";
+  const isGreeting = userMessage === "[SALUDO_INICIAL_SISTEMA]";
 
-  if (userMessage === "[SALUDO_INICIAL_SISTEMA]") {
-    // Si es el disparo automático, vaciamos el mensaje del usuario 
-    // y le damos una instrucción clara de "empezar a hablar ella sola"
-    cleanUserMessage = "Hola, preséntate y hazme las preguntas iniciales según tus instrucciones.";
-    extraGreetingInstruction = " IMPORTANTE: Es el inicio del día. No esperes a que yo diga nada, toma la iniciativa.";
-  }
-
-  // 2. REGLAS MAESTRAS ACTUALIZADAS (Con soporte para extracción de datos)
-  const masterRules = `Eres el Especialista Principal de Salud360. Tu misión es ser un asistente de salud experto y proactivo.
-
-  INSTRUCCIONES DE REGISTRO BIOMÉTRICO:
-  - Si el usuario menciona su peso, horas de sueño o nivel de estrés (1-10), DEBES incluir al final de tu respuesta EXACTAMENTE este formato: [UPDATE:weight=XX,sleep_hours=XX,stress_level=XX]. 
-  - Sustituye XX solo por el valor numérico mencionado. Si no menciona alguno, deja XX.
-  - Ejemplo: Si dice "peso 80kg", añades [UPDATE:weight=80,sleep_hours=XX,stress_level=XX].
-
-  INSTRUCCIONES CRÍTICAS:
-  1. ANALIZA Y PERSONALIZA: Usa los datos del paciente (Peso, IMC, Calorías) para tus consejos.
-  2. CONTENIDO DETALLADO: Proporciona menús, tablas y planes sin excusas.
-  3. FORMATO DE RETO: Al final de cada interacción (salvo en el saludo inicial), asigna: [RETO: Nombre del Reto].
-
-  TONO: Profesional, motivador y directo. Usa negritas.
+  const masterRules = `Eres Salud360, un asistente clínico de élite.
   
-  LISTA DE RETOS: Hidratación 2.5L, Cena sin procesados, Regla del plato 50% vegetal, Caminata 15 min post-comida, Desayuno proteico, Ayuno 12h.`;
-
-  const finalSystemPrompt = `${masterRules}\n\n${patientContext}${extraGreetingInstruction}`;
+  COMPORTAMIENTO:
+  1. Si es saludo inicial: Da la bienvenida brevemente y pregunta si el usuario se ha pesado hoy.
+  2. Si el usuario menciona peso, sueño o estrés: Responde amablemente y añade AL FINAL del mensaje el tag: [UPDATE:weight=XX,sleep_hours=XX,stress_level=XX] sustituyendo XX por el valor.
+  3. Si no hay datos nuevos, NO pongas el tag [UPDATE].
+  4. Sé conciso: Máximo 2 párrafos.
+  5. Retos: Ocasionalmente añade [RETO: Nombre del Reto] al final.
+  6. Usa Markdown para negritas.`;
 
   try {
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -50,30 +32,28 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile", 
         messages: [
-          { role: "system", content: finalSystemPrompt },
-          { role: "user", content: cleanUserMessage }
+          { role: "system", content: masterRules + "\n" + patientContext },
+          { role: "user", content: isGreeting ? "Hola, preséntate brevemente y pregunta por mi peso de hoy." : userMessage }
         ],
-        temperature: 0.6, 
-        max_tokens: 1000  
+        temperature: 0.4, // Menor temperatura = mayor obediencia a las reglas
+        max_tokens: 800
       })
     });
 
     const data = await aiResponse.json();
-    if (!aiResponse.ok) throw new Error(data.error?.message || 'Error en IA');
-
     const botContent = data.choices[0].message.content;
 
-    // Guardar en historial de Supabase
-    await supabase
-      .from('chat_history')
-      .insert([
-        { patient_id: patientId, role: 'assistant', message: botContent }
-      ]);
+    // Guardar respuesta de la IA en el historial
+    await supabase.from('chat_history').insert([{ 
+      patient_id: patientId, 
+      role: 'assistant', 
+      message: botContent 
+    }]);
 
     res.status(200).json({ message: botContent });
 
   } catch (error) {
-    console.error("Error en API Chat:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error("Error:", error);
+    res.status(500).json({ error: "Error en la comunicación con la IA" });
   }
 }
