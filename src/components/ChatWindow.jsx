@@ -1,79 +1,69 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import FoodTracker from './FoodTracker';
+
+const BiometricVisualizer = dynamic(() => import('./BiometricVisualizer'), { 
+  ssr: false,
+  loading: () => <div style={{ height: '350px', background: '#020617', borderRadius: '24px' }} />
+});
 
 export default function ChatWindow({ patientId }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [patientData, setPatientData] = useState(null);
+  const [foodLogs, setFoodLogs] = useState([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [hasGreeted, setHasGreeted] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // 1. CARGA DE HISTORIAL REAL DESDE SUPABASE
-  useEffect(() => {
-    const loadHistory = async () => {
-      if (!patientId || !supabase) return;
-      
-      const { data, error } = await supabase
-        .from('chat_history')
-        .select('role, message, created_at')
-        .eq('patient_id', patientId)
-        .order('created_at', { ascending: true });
+  const loadAllData = async () => {
+    if (!patientId) return;
+    try {
+      const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
+      if (pData) setPatientData(pData);
 
-      if (error) {
-        console.error("Error al cargar historial:", error);
-      } else if (data && data.length > 0) {
-        setMessages(data);
-      } else {
-        // Mensaje de bienvenida inicial para perfiles nuevos
-        setMessages([{
-          role: 'assistant',
-          message: "Hola. Soy tu Especialista en Nutrición Digital. Mi objetivo es acompañarte en la mejora de tu salud a través de un pre-diagnóstico clínico y retos progresivos. Para comenzar: ¿Cuál es tu objetivo principal de salud hoy y tienes alguna condición médica o alergia?"
-        }]);
+      const { data: cData } = await supabase.from('chat_history').select('role, message')
+        .eq('patient_id', patientId).order('created_at', { ascending: true });
+      if (cData) setMessages(cData);
+
+      const today = new Date().toISOString().split('T')[0];
+      const { data: fData } = await supabase.from('food_logs').select('*').eq('patient_id', patientId).gte('created_at', today);
+      if (fData) setFoodLogs(fData);
+    } catch (err) { console.error(err); } finally { setIsInitialLoading(false); }
+  };
+
+  useEffect(() => {
+    const triggerGreeting = async () => {
+      if (!isInitialLoading && patientData && !hasGreeted) {
+        setHasGreeted(true);
+        const today = new Date().toISOString().split('T')[0];
+        const { data: lastMsg } = await supabase.from('chat_history').select('created_at')
+          .eq('patient_id', patientId).order('created_at', { descending: true }).limit(1);
+
+        if (!lastMsg?.[0] || lastMsg[0].created_at.split('T')[0] !== today) {
+          setLoading(true);
+          try {
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ patientId, userMessage: "[SALUDO_INICIAL_SISTEMA]", systemPrompt: `Nombre: ${patientData.name}` })
+            });
+            const data = await res.json();
+            if (data.message) setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
+          } catch (e) { console.error(e); } finally { setLoading(false); }
+        }
       }
     };
+    triggerGreeting();
+  }, [isInitialLoading, patientData]);
 
-    loadHistory();
-  }, [patientId]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // 2. GENERADOR DE INFORME BASADO EN EL HISTORIAL PERSISTENTE
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    const dateStr = new Date().toLocaleDateString();
-    
-    // Encabezado Estilizado
-    doc.setFontSize(18);
-    doc.setTextColor(39, 174, 96); // Verde Nutricional
-    doc.text("INFORME EVOLUTIVO DE NUTRICIÓN", 14, 20);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Paciente ID: ${patientId}`, 14, 28);
-    doc.text(`Fecha de Emisión: ${dateStr}`, 14, 33);
-    doc.line(14, 36, 196, 36); // Línea divisoria
-
-    // Cuerpo: Resumen de Retos y Conversación
-    const tableRows = messages.map(msg => [
-      new Date(msg.created_at || Date.now()).toLocaleDateString(),
-      msg.role === 'user' ? 'Paciente' : 'Especialista',
-      msg.message
-    ]);
-
-    doc.autoTable({
-      startY: 40,
-      head: [['Fecha', 'Actor', 'Intervención / Progreso']],
-      body: tableRows,
-      headStyles: { fillColor: [39, 174, 96] },
-      styles: { fontSize: 8, cellPadding: 3 },
-      columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 30 } }
-    });
-
-    doc.save(`Informe_Nutricion_Salud360_${patientId}.pdf`);
-  };
+  useEffect(() => { loadAllData(); }, [patientId]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -81,87 +71,113 @@ export default function ChatWindow({ patientId }) {
 
     const userText = input.trim();
     setInput('');
-    // Añadimos localmente con timestamp temporal para feedback inmediato
-    setMessages(prev => [...prev, { role: 'user', message: userText, created_at: new Date().toISOString() }]);
+    setMessages(prev => [...prev, { role: 'user', message: userText }]);
     setLoading(true);
 
     try {
+      // Guardar mensaje de usuario en Supabase
+      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }]);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId, userMessage: userText })
+        body: JSON.stringify({ 
+          patientId, 
+          userMessage: userText,
+          systemPrompt: `Paciente: ${patientData?.name}. Peso: ${patientData?.weight}kg.`
+        })
       });
-
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Error en el servidor');
+      let aiText = data.message || "Lo siento, tuve un problema al procesar tu mensaje.";
 
-      setMessages(prev => [...prev, { role: 'assistant', message: data.message, created_at: new Date().toISOString() }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', message: `Ocurrió un error: ${error.message}` }]);
-    } finally {
-      setLoading(false);
-    }
+      // Procesar actualizaciones biométricas
+      const updateMatch = aiText.match(/\[UPDATE:(.*?)\]/);
+      if (updateMatch) {
+        const updates = {};
+        updateMatch[1].split(',').forEach(p => {
+          const [k, v] = p.split('=');
+          if (v !== 'XX' && !isNaN(v)) updates[k] = parseFloat(v);
+        });
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('patients').update(updates).eq('id', patientId);
+          loadAllData();
+        }
+      }
+
+      const cleanText = aiText.replace(/\[UPDATE:.*?\]/g, '').replace(/\[RETO:.*?\]/g, '').trim();
+      setMessages(prev => [...prev, { role: 'assistant', message: cleanText }]);
+    } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
+  const weight = patientData?.weight || 70;
+  const heightCm = patientData?.height || 170;
+  const recCalories = Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500);
+  const dailyTotal = foodLogs.reduce((acc, curr) => acc + curr.calories, 0);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f4f7f6' }}>
-      {/* Header con Botón de Informe */}
-      <div style={{ 
-        padding: '15px 25px', background: 'white', borderBottom: '2px solid #27ae60', 
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between' 
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/logo.jpg" alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
-          <div>
-            <h2 style={{ margin: 0, fontSize: '16px', color: '#2c3e50' }}>Mi Plan Nutricional</h2>
-            <span style={{ fontSize: '11px', color: '#27ae60', fontWeight: 'bold' }}>● Seguimiento Continuo</span>
-          </div>
+    <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
+      <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
+        <div style={{ minHeight: '350px', borderRadius: '24px', overflow: 'hidden', marginBottom: '15px', background: '#020617' }}>
+          <BiometricVisualizer patientData={patientData || { weight: 70, stress_level: 5 }} />
         </div>
-        
-        <button 
-          onClick={exportPDF}
-          style={{ 
-            padding: '8px 16px', background: '#2c3e50', color: 'white', 
-            border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
-            fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px'
-          }}
-        >
-          📄 Exportar Evolutivo
-        </button>
-      </div>
 
-      {/* Area de Chat */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {messages.map((msg, idx) => (
-          <div key={idx} style={{
-            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-            background: msg.role === 'user' ? '#27ae60' : 'white',
-            color: msg.role === 'user' ? 'white' : '#34495e',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            maxWidth: '75%',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            fontSize: '15px'
-          }}>
-            {msg.message}
-          </div>
-        ))}
-        {loading && <div style={{ fontSize: '12px', color: '#7f8c8d', paddingLeft: '10px' }}>Analizando progreso...</div>}
-        <div ref={messagesEndRef} />
-      </div>
+        <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
 
-      {/* Input de Mensaje */}
-      <form onSubmit={handleSendMessage} style={{ padding: '20px', background: 'white', display: 'flex', gap: '10px', borderTop: '1px solid #eee' }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Informa sobre tu reto o síntomas..."
-          style={{ flex: 1, padding: '12px 20px', border: '1px solid #ddd', borderRadius: '25px', outline: 'none' }}
-        />
-        <button type="submit" style={{ padding: '10px 25px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '25px', cursor: 'pointer', fontWeight: 'bold' }}>
-          Enviar
-        </button>
-      </form>
+        {/* --- BOTONES RESTAURADOS --- */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
+          <button 
+            onClick={() => window.print()}
+            style={{ padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            📄 Informe
+          </button>
+          <Link href="/" style={{ textDecoration: 'none' }}>
+            <button style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+              🚪 Salir
+            </button>
+          </Link>
+        </div>
+
+        <div style={{ marginTop: '20px', padding: '15px', background: 'white', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '800' }}>
+             <span>DIETA DIARIA</span>
+             <span>{dailyTotal} / {recCalories} kcal</span>
+           </div>
+           <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '10px', marginTop: '8px' }}>
+             <div style={{ width: `${Math.min((dailyTotal / recCalories) * 100, 100)}%`, height: '100%', background: '#22c55e', borderRadius: '10px' }} />
+           </div>
+        </div>
+      </aside>
+
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
+          {messages.map((msg, idx) => (
+            <div key={idx} style={{
+              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
+              padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
+              maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0',
+              border: '1px solid #f1f5f9', fontSize: '14px'
+            }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
+            </div>
+          ))}
+          {loading && <div style={{ fontSize: '12px', color: '#94a3b8', padding: '10px' }}>Salud360 respondiendo...</div>}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
+          <input 
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc' }}
+            value={input} onChange={(e) => setInput(e.target.value)}
+            placeholder="Escribe aquí..."
+          />
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', border: 'none', cursor: 'pointer', fontWeight: '700' }}>
+            Enviar
+          </button>
+        </form>
+      </main>
     </div>
   );
 }
