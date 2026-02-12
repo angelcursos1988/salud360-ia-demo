@@ -18,38 +18,52 @@ export default function ChatWindow({ patientId }) {
   const [patientData, setPatientData] = useState(null);
   const [dailyCalories, setDailyCalories] = useState(0); 
   const [foodLogs, setFoodLogs] = useState([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const messagesEndRef = useRef(null);
 
   const loadAllData = async () => {
     if (!patientId) return;
-    const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
-    if (pData) setPatientData(pData);
+    try {
+      // 1. Datos del paciente
+      const { data: pData } = await supabase.from('patients').select('*').eq('id', patientId).single();
+      if (pData) setPatientData(pData);
 
-    const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
-    if (cData) setMessages(cData);
+      // 2. Historial de chat
+      const { data: cData } = await supabase.from('chat_history').select('role, message').eq('patient_id', patientId).order('created_at', { ascending: true });
+      if (cData) setMessages(cData);
 
-    const today = new Date().toISOString().split('T')[0];
-    const { data: fData } = await supabase.from('food_logs').select('*').eq('patient_id', patientId).gte('created_at', today);
-    
-    if (fData) {
-      setFoodLogs(fData);
-      setDailyCalories(fData.reduce((acc, curr) => acc + curr.calories, 0) || 0);
+      // 3. Comidas de hoy
+      const today = new Date().toISOString().split('T')[0];
+      const { data: fData } = await supabase.from('food_logs').select('*').eq('patient_id', patientId).gte('created_at', today);
+      
+      if (fData) {
+        setFoodLogs(fData);
+        setDailyCalories(fData.reduce((acc, curr) => acc + curr.calories, 0) || 0);
+      }
+    } catch (err) {
+      console.error("Error cargando datos:", err);
+    } finally {
+      setIsInitialLoading(false);
     }
   };
 
   useEffect(() => { loadAllData(); }, [patientId]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // --- LÓGICA NUTRICIONAL ---
+  // --- LÓGICA NUTRICIONAL PROTEGIDA ---
   const weight = patientData?.weight || 70;
-  const height = (patientData?.height || 170) / 100;
-  const imcReal = (weight / (height * height)).toFixed(1);
+  const heightCm = patientData?.height || 170;
+  const heightM = heightCm / 100;
+  
+  // Cálculo de IMC con protección contra división por cero
+  const imcReal = heightM > 0 ? (weight / (heightM * heightM)).toFixed(1) : "0.0";
   const imcIdeal = 22.0;
   
-  // Estimación de calorías recomendadas (TMB x Actividad moderada simplificada)
-  const recCalories = Math.round((10 * weight) + (6.25 * (height * 100)) - 50 + 500); 
+  // Harris-Benedict simplificado + 500 kcal (objetivo estándar)
+  const recCalories = patientData 
+    ? Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500) 
+    : 2000; 
 
-  // Reparto recomendado
   const targets = {
     Desayuno: Math.round(recCalories * 0.20),
     Almuerzo: Math.round(recCalories * 0.10),
@@ -59,28 +73,55 @@ export default function ChatWindow({ patientId }) {
     Otros: Math.round(recCalories * 0.05)
   };
 
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
+
+    const userText = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', message: userText }]);
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          patientId, 
+          userMessage: userText,
+          systemPrompt: `Eres un asistente clínico. Paciente: ${patientData?.name}. IMC: ${imcReal}. Calorías hoy: ${dailyCalories}/${recCalories}.`
+        })
+      });
+      const data = await response.json();
+      setMessages(prev => [...prev, { role: 'assistant', message: data.message }]);
+      await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }, { patient_id: patientId, role: 'assistant', message: data.message }]);
+    } catch (error) { console.error(error); } finally { setLoading(false); }
+  };
+
+  if (isInitialLoading) return <div style={{ padding: '20px', color: '#64748b' }}>Cargando perfil clínico...</div>;
+
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', background: '#f8fafc', overflow: 'hidden' }}>
       <aside style={{ width: '420px', background: '#f8fafc', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px', overflowY: 'auto' }}>
         
-        {/* MUÑECO 3D */}
+        {/* VISUALIZADOR 3D */}
         <div style={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', marginBottom: '15px' }}>
           <BiometricVisualizer patientData={patientData} />
         </div>
 
-        {/* --- NUEVO: WIDGET DE ÍNDICES BIOMÉTRICOS --- */}
-        <div style={{ background: '#1e293b', padding: '15px', borderRadius: '20px', marginBottom: '15px', color: 'white' }}>
+        {/* WIDGET BIOMÉTRICO */}
+        <div style={{ background: '#1e293b', padding: '18px', borderRadius: '20px', marginBottom: '15px', color: 'white' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center' }}>
             <div>
               <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800' }}>IMC REAL</div>
-              <div style={{ fontSize: '18px', fontWeight: '800', color: '#fbbf24' }}>{imcReal}</div>
+              <div style={{ fontSize: '20px', fontWeight: '900', color: '#fbbf24' }}>{imcReal}</div>
             </div>
             <div>
               <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800' }}>IMC IDEAL</div>
-              <div style={{ fontSize: '18px', fontWeight: '800', color: '#22c55e' }}>{imcIdeal}</div>
+              <div style={{ fontSize: '20px', fontWeight: '900', color: '#22c55e' }}>{imcIdeal}</div>
             </div>
           </div>
-          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #334155', textAlign: 'center' }}>
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #334155', textAlign: 'center' }}>
             <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800' }}>RECOMENDACIÓN DIARIA</div>
             <div style={{ fontSize: '16px', fontWeight: '800' }}>🔥 {recCalories} kcal / día</div>
           </div>
@@ -88,9 +129,9 @@ export default function ChatWindow({ patientId }) {
 
         <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
 
-        {/* DESPLEGABLES CON ESTIMACIÓN */}
+        {/* DESPLEGABLES DE COMIDA */}
         <div style={{ marginTop: '10px' }}>
-          <h4 style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', marginBottom: '12px' }}>DESGLOSE VS OBJETIVO</h4>
+          <h4 style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', marginBottom: '12px', letterSpacing: '0.5px' }}>DESGLOSE VS OBJETIVO</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {['Desayuno', 'Almuerzo', 'Comida', 'Merienda', 'Cena', 'Otros'].map((cat) => {
               const catItems = foodLogs.filter(f => f.category === cat);
@@ -99,22 +140,22 @@ export default function ChatWindow({ patientId }) {
 
               return (
                 <details key={cat} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  <summary style={{ listStyle: 'none', padding: '10px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <summary style={{ listStyle: 'none', padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700' }}>{cat}</span>
-                      <span style={{ fontSize: '9px', color: '#94a3b8' }}>Objetivo: {target} kcal</span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{cat}</span>
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>Objetivo: {target} kcal</span>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', fontWeight: '800', color: catTotal > target ? '#ef4444' : '#22c55e' }}>{catTotal} kcal</div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: catTotal > target ? '#ef4444' : '#22c55e' }}>
+                      {catTotal} kcal
                     </div>
                   </summary>
-                  <div style={{ padding: '0 14px 10px 14px', background: '#f8fafc', fontSize: '11px' }}>
-                    {catItems.map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                        <span>{item.description}</span>
-                        <span style={{ fontWeight: '600' }}>{item.calories}</span>
+                  <div style={{ padding: '0 14px 12px 14px', background: '#f8fafc', borderTop: '1px solid #f1f5f9' }}>
+                    {catItems.length > 0 ? catItems.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '11px', borderBottom: i === catItems.length -1 ? 'none' : '1px dashed #e2e8f0' }}>
+                        <span style={{ color: '#475569' }}>{item.description}</span>
+                        <span style={{ fontWeight: '700' }}>{item.calories}</span>
                       </div>
-                    ))}
+                    )) : <div style={{ padding: '8px 0', fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic' }}>Sin registros</div>}
                   </div>
                 </details>
               );
@@ -122,26 +163,25 @@ export default function ChatWindow({ patientId }) {
           </div>
         </div>
 
-        {/* --- TOTAL FINAL --- */}
-        <div style={{ marginTop: '15px', padding: '15px', background: 'white', borderRadius: '15px', border: '2px solid #e2e8f0' }}>
+        {/* BARRA TOTAL INFERIOR */}
+        <div style={{ marginTop: '20px', padding: '18px', background: 'white', borderRadius: '20px', border: '2px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: '800', fontSize: '13px' }}>TOTAL CONSUMIDO</span>
+            <span style={{ fontWeight: '800', fontSize: '13px', color: '#64748b' }}>CONSUMO TOTAL</span>
             <span style={{ fontWeight: '900', fontSize: '18px', color: dailyCalories > recCalories ? '#ef4444' : '#0f172a' }}>
-              {dailyCalories} <small style={{fontSize: '10px', color: '#64748b'}}> / {recCalories} kcal</small>
+              {dailyCalories} <small style={{fontSize: '11px', color: '#94a3b8', fontWeight: '400'}}> / {recCalories} kcal</small>
             </span>
           </div>
-          <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', marginTop: '10px', overflow: 'hidden' }}>
+          <div style={{ width: '100%', height: '10px', background: '#f1f5f9', borderRadius: '10px', marginTop: '12px', overflow: 'hidden' }}>
             <div style={{ 
               width: `${Math.min((dailyCalories / recCalories) * 100, 100)}%`, 
               height: '100%', 
               background: dailyCalories > recCalories ? '#ef4444' : '#22c55e',
-              transition: 'width 0.5s ease'
+              transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
             }} />
           </div>
         </div>
 
-        {/* BOTONES INFERIORES */}
-        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+        <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', paddingTop: '20px' }}>
           <Link href="/dashboard" style={{ flex: 1 }}>
             <button style={{ width: '100%', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', fontSize: '12px' }}>Panel Médico</button>
           </Link>
@@ -150,7 +190,6 @@ export default function ChatWindow({ patientId }) {
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
-        {/* ... (El resto del main y el form de chat se mantienen igual que tu versión anterior) ... */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
           {messages.map((msg, idx) => (
             <div key={idx} style={{
@@ -158,22 +197,33 @@ export default function ChatWindow({ patientId }) {
               background: msg.role === 'user' ? '#f1f5f9' : '#ffffff',
               padding: '16px 20px', borderRadius: '20px', marginBottom: '16px',
               maxWidth: '85%', marginLeft: msg.role === 'user' ? 'auto' : '0',
-              border: '1px solid #f1f5f9', fontSize: '14px'
+              border: '1px solid #f1f5f9', fontSize: '14px', color: '#1e293b'
             }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.message}</ReactMarkdown>
             </div>
           ))}
+          {loading && <div style={{ color: '#94a3b8', fontSize: '12px', paddingLeft: '20px' }}>IA procesando respuesta...</div>}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px' }}>
+
+        <form onSubmit={handleSendMessage} style={{ padding: '24px 40px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px', background: 'white' }}>
           <input 
-            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none' }}
+            style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0', background: '#f8fafc', outline: 'none', fontSize: '14px' }}
             value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Escribe un mensaje..."
+            placeholder="Escribe un mensaje al asistente..."
+            disabled={loading}
           />
-          <button type="submit" style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none' }}>Enviar</button>
+          <button type="submit" disabled={loading} style={{ background: '#22c55e', color: 'white', padding: '0 25px', borderRadius: '14px', fontWeight: '700', border: 'none', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+            {loading ? '...' : 'Enviar'}
+          </button>
         </form>
       </main>
+
+      <style jsx global>{`
+        summary::-webkit-details-marker { display: none; }
+        .markdown-container table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+        .markdown-container th, td { padding: 10px; border: 1px solid #e2e8f0; }
+      `}</style>
     </div>
   );
 }
