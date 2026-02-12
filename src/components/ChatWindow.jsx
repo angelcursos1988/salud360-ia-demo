@@ -52,13 +52,11 @@ export default function ChatWindow({ patientId }) {
       if (!isInitialLoading && patientData && !hasGreeted) {
         setHasGreeted(true);
         const today = new Date().toISOString().split('T')[0];
-        
         const { data: lastMsg } = await supabase.from('chat_history')
           .select('created_at').eq('patient_id', patientId)
           .order('created_at', { descending: true }).limit(1);
 
         const lastMsgDate = lastMsg?.[0]?.created_at?.split('T')[0];
-        
         if (lastMsgDate !== today) {
           setLoading(true);
           try {
@@ -68,7 +66,7 @@ export default function ChatWindow({ patientId }) {
               body: JSON.stringify({ 
                 patientId, 
                 userMessage: "[SALUDO_INICIAL_SISTEMA]", 
-                systemPrompt: `Paciente: ${patientData.name}. Es el primer contacto del día.`
+                systemPrompt: `Paciente: ${patientData.name}. Primer contacto del día.`
               })
             });
             const data = await response.json();
@@ -86,7 +84,6 @@ export default function ChatWindow({ patientId }) {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
-
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', message: userText }]);
@@ -102,11 +99,9 @@ export default function ChatWindow({ patientId }) {
           systemPrompt: `Paciente: ${patientData?.name}. Peso: ${patientData?.weight}kg.`
         })
       });
-      
       const data = await response.json();
       let aiResponseText = data.message;
 
-      // 1. Procesar Actualizaciones Biométricas Ocultas
       const updateMatch = aiResponseText.match(/\[UPDATE:(.*?)\]/);
       if (updateMatch) {
         const updates = {};
@@ -121,22 +116,26 @@ export default function ChatWindow({ patientId }) {
         }
       }
 
-      // 2. Limpiar TODAS las etiquetas del texto para el usuario
-      const cleanText = aiResponseText
-        .replace(/\[UPDATE:.*?\]/g, '')
-        .replace(/\[RETO:.*?\]/g, '')
-        .trim();
-
+      const cleanText = aiResponseText.replace(/\[UPDATE:.*?\]/g, '').replace(/\[RETO:.*?\]/g, '').trim();
       setMessages(prev => [...prev, { role: 'assistant', message: cleanText }]);
       await supabase.from('chat_history').insert([{ patient_id: patientId, role: 'user', message: userText }]);
-      
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
+  // Lógica nutricional
   const weight = patientData?.weight || 70;
   const heightCm = patientData?.height || 170;
   const imcReal = (heightCm > 0) ? (weight / ((heightCm / 100) ** 2)).toFixed(1) : "0.0";
   const recCalories = Math.round((10 * weight) + (6.25 * heightCm) - 50 + 500);
+
+  const targets = {
+    Desayuno: Math.round(recCalories * 0.20),
+    Almuerzo: Math.round(recCalories * 0.10),
+    Comida: Math.round(recCalories * 0.35),
+    Merienda: Math.round(recCalories * 0.10),
+    Cena: Math.round(recCalories * 0.20),
+    Otros: Math.round(recCalories * 0.05)
+  };
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100vh', background: '#f8fafc', overflow: 'hidden' }}>
@@ -153,6 +152,49 @@ export default function ChatWindow({ patientId }) {
         </div>
 
         <FoodTracker patientId={patientId} onFoodLogged={loadAllData} />
+
+        {/* --- DESPLEGABLE DE COMIDAS RESTAURADO --- */}
+        <div style={{ marginTop: '20px' }}>
+          <h4 style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', marginBottom: '12px' }}>DESGLOSE DIARIO</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Object.keys(targets).map((cat) => {
+              const catItems = foodLogs.filter(f => f.category === cat);
+              const catTotal = catItems.reduce((acc, curr) => acc + curr.calories, 0);
+              const target = targets[cat];
+              return (
+                <details key={cat} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                  <summary style={{ listStyle: 'none', padding: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>{cat}</div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>Meta: {target} kcal</div>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: catTotal > target ? '#ef4444' : '#22c55e' }}>
+                      {catTotal} kcal
+                    </div>
+                  </summary>
+                  <div style={{ padding: '10px', background: '#f8fafc', borderTop: '1px solid #f1f5f9' }}>
+                    {catItems.length > 0 ? catItems.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '11px' }}>
+                        <span style={{ color: '#475569' }}>{item.description}</span>
+                        <span style={{ fontWeight: '700' }}>{item.calories}</span>
+                      </div>
+                    )) : <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic' }}>Sin registros</div>}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ marginTop: '20px', padding: '15px', background: 'white', borderRadius: '15px', border: '2px solid #e2e8f0' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '800' }}>
+             <span>CONSUMIDO</span>
+             <span>{dailyCalories} / {recCalories} kcal</span>
+           </div>
+           <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '10px', marginTop: '8px', overflow: 'hidden' }}>
+             <div style={{ width: `${Math.min((dailyCalories / recCalories) * 100, 100)}%`, height: '100%', background: dailyCalories > recCalories ? '#ef4444' : '#22c55e', transition: 'width 0.5s' }} />
+           </div>
+        </div>
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
