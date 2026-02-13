@@ -1,54 +1,74 @@
-import React, { Suspense, useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { useGLTF, OrbitControls, ContactShadows, Environment, Html, Center } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
+import { useGLTF, OrbitControls, ContactShadows, Environment, Center } from '@react-three/drei';
+import * as THREE from 'three';
 
-// Modelo contenido en un componente separado para evitar errores de hidratación
-function ModelContent({ weight }) {
-  // Usamos una URL de un modelo humano extremadamente ligero y compatible
-  const { scene } = useGLTF('https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/michelin/model.gltf', true);
+// 1. Separamos el modelo para que el Suspense funcione correctamente
+function Model({ weight }) {
+  // Modelo humanoide profesional y ligero
+  const { scene } = useGLTF('https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/michelin/model.gltf');
   
-  const factor = (weight || 70) / 70;
+  const modelRef = useRef();
+
+  // Tu lógica de peso aplicada al modelo real
+  const bodyWidth = useMemo(() => {
+    const w = Number(weight) || 70;
+    return Math.max(0.8, Math.min(w / 70, 1.4));
+  }, [weight]);
+
+  useFrame((state) => {
+    if (!modelRef.current) return;
+    // Rotación suave como tenías antes
+    modelRef.current.rotation.y += 0.005;
+  });
 
   return (
     <primitive 
+      ref={modelRef}
       object={scene} 
-      scale={[factor, 1, factor]} 
+      scale={[bodyWidth, 1, bodyWidth]} // Se ensancha según tu lógica de peso
       position={[0, -1, 0]} 
     />
   );
 }
 
 export default function BiometricVisualizer({ patientData, isMini = false }) {
-  const [isClient, setIsClient] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  // Evitamos que Next.js intente cargar el 3D en el servidor
+  // Mantenemos tu useEffect original que evitaba el error de hidratación
   useEffect(() => {
-    setIsClient(true);
+    setMounted(true);
   }, []);
 
-  if (!isClient) return <div style={{ height: isMini ? '200px' : '450px', background: '#111827' }} />;
+  if (!patientData || !mounted) return <div style={{height: isMini ? '150px' : '350px', background: '#020617'}} />;
 
   return (
     <div style={{ 
       width: '100%', 
-      height: isMini ? '200px' : '450px', 
-      background: 'radial-gradient(circle at 50% 50%, #1f2937 0%, #030712 100%)',
-      borderRadius: '24px',
-      overflow: 'hidden'
+      height: isMini ? '150px' : '350px', 
+      background: 'radial-gradient(circle, #0f172a 0%, #020617 100%)', 
+      borderRadius: isMini ? '12px' : '20px', 
+      overflow: 'hidden', 
+      position: 'relative' 
     }}>
-      <Canvas camera={{ position: [0, 1.5, 4], fov: 45 }}>
+      
+      <Canvas 
+        shadows 
+        camera={{ position: [0, 2, 6], fov: 35 }}
+      >
         <ambientLight intensity={1.5} />
         <pointLight position={[10, 10, 10]} intensity={1} />
         
-        <Suspense fallback={<Html center><span style={{color: 'white', fontSize: '12px'}}>CARGANDO AVATAR...</span></Html>}>
-          <Center>
-            <ModelContent weight={patientData?.weight} />
+        {/* El Suspense es OBLIGATORIO cuando usas useGLTF para que no explote al cargar */}
+        <Suspense fallback={null}>
+          <Center top>
+            <Model weight={patientData.weight} />
           </Center>
           <Environment preset="city" />
         </Suspense>
 
-        <ContactShadows position={[0, -1, 0]} opacity={0.5} scale={10} blur={2.5} far={4} />
-        <OrbitControls enableZoom={!isMini} minPolarAngle={Math.PI/4} maxPolarAngle={Math.PI/1.6} />
+        <ContactShadows position={[0, -1, 0]} opacity={0.4} scale={10} blur={2.5} />
+        <OrbitControls enableZoom={false} />
       </Canvas>
     </div>
   );
