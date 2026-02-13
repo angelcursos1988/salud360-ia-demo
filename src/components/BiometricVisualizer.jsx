@@ -1,55 +1,57 @@
 import React, { Suspense, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { useGLTF, OrbitControls, ContactShadows, Environment, Html } from '@react-three/drei';
+import { useGLTF, OrbitControls, Stage, Html, Center } from '@react-three/drei';
 
 function HumanModel({ weight }) {
-  // Usamos un modelo de prueba estable
-  const { scene } = useGLTF('https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/man/model.gltf');
-  
-  const modelRef = useRef();
-  
-  // Lógica de escalado por peso
-  const scaleX = (weight || 70) / 70;
+  // Probamos con este modelo de "Hombre Base" que es muy compatible
+  // Si este no carga, el problema es la conexión a internet/firewall
+  const { scene } = useGLTF('https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/duck/model.gltf'); 
+  // Nota: He puesto un patito temporalmente porque pesa poco, si sale el pato, 
+  // solo tenemos que cambiar la URL por el humano.
+
+  const factor = (weight || 70) / 70;
 
   return (
     <primitive 
-      ref={modelRef}
       object={scene} 
-      scale={[scaleX, 1, 1]} // Solo ensancha horizontalmente según peso
-      position={[0, -1.5, 0]} 
+      scale={[factor, 1, factor]} // Escalado de peso
     />
   );
 }
 
-// Componente para capturar errores de carga
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError(error) { return { hasError: true }; }
-  render() {
-    if (this.state.hasError) return <div style={{color: 'white', padding: 20}}>Error al cargar el modelo 3D.</div>;
-    return this.props.children;
-  }
-}
-
-export default function BiometricVisualizer({ patientData }) {
-  // Verificación de seguridad
-  if (!patientData) return null;
-
+export default function BiometricVisualizer({ patientData, isMini = false }) {
   return (
-    <div style={{ width: '100%', height: '400px', background: '#020617', borderRadius: '20px' }}>
-      <ErrorBoundary>
-        <Canvas camera={{ position: [0, 0, 4] }}>
-          <ambientLight intensity={0.5} />
-          <Environment preset="city" />
-          
-          <Suspense fallback={<Html center><span style={{color: 'white'}}>Cargando Biometría...</span></Html>}>
-            <HumanModel weight={patientData.weight} />
-          </Suspense>
+    <div style={{ 
+      width: '100%', 
+      height: isMini ? '200px' : '450px', 
+      background: '#111827', // Un gris muy oscuro, mejor que negro puro para ver siluetas
+      borderRadius: '24px',
+      position: 'relative'
+    }}>
+      
+      <Canvas shadows camera={{ position: [0, 0, 5], fov: 50 }}>
+        {/* Luz ambiental fuerte para que NADA se vea negro */}
+        <ambientLight intensity={2} />
+        <pointLight position={[10, 10, 10]} intensity={2} />
+        
+        <Suspense fallback={<Html center><span style={{color: 'white'}}>Cargando Mascota...</span></Html>}>
+          {/* Stage ajusta automáticamente las luces y el centrado del modelo */}
+          <Stage environment="city" intensity={0.5} contactShadow={true} shadowBias={-0.0015}>
+            <Center>
+               <HumanModel weight={patientData?.weight} />
+            </Center>
+          </Stage>
+        </Suspense>
 
-          <ContactShadows position={[0, -1.5, 0]} opacity={0.4} scale={10} blur={2} />
-          <OrbitControls enableZoom={false} />
-        </Canvas>
-      </ErrorBoundary>
+        <OrbitControls makeDefault enableZoom={!isMini} />
+      </Canvas>
+
+      {/* Etiqueta de aviso si no hay datos */}
+      {!patientData && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563' }}>
+          Esperando datos biométricos...
+        </div>
+      )}
     </div>
   );
 }
