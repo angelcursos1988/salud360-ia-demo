@@ -1,120 +1,113 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useRef, useMemo, useState, useEffect } from 'react';
+import { Float, ContactShadows, OrbitControls, Sphere, Capsule } from '@react-three/drei';
 import * as THREE from 'three';
 
-function HumanoidMesh({ stress, weight, isMini }) {
+function BaymaxModel({ petData, isMini }) {
   const groupRef = useRef();
+  const headRef = useRef();
 
+  // 1. Lógica de Color (Basada en Salud/Hambre de tu propuesta Tamagotchi)
   const color = useMemo(() => {
-    const s = Number(stress) || 0;
-    const hue = ((10 - s) * 12) / 360;
-    return new THREE.Color().setHSL(hue, 0.8, 0.5);
-  }, [stress]);
+    const health = petData?.health ?? 100;
+    const hunger = petData?.hunger ?? 0;
+    if (health < 30) return "#ff9999"; // Rojo si está mal
+    if (hunger > 70) return "#ffcc88"; // Naranja si tiene hambre
+    return "#ffffff"; // Blanco Baymax
+  }, [petData]);
 
-  const bodyWidth = useMemo(() => {
-    const w = Number(weight) || 70;
-    return Math.max(0.8, Math.min(w / 70, 1.4));
-  }, [weight]);
-
+  // 2. Animación de "Vida"
   useFrame((state) => {
-    if (!groupRef.current || isMini) return;
-    const time = state.clock.getElapsedTime();
-    groupRef.current.rotation.y += 0.008;
-    const pulse = Math.sin(time * (Number(stress) > 7 ? 6 : 1.5)) * 0.1;
-    groupRef.current.position.y = -1.5 + pulse;
+    if (!groupRef.current) return;
+    const t = state.clock.getElapsedTime();
+    const energy = petData?.energy ?? 100;
+    const speed = Math.max(0.4, energy / 100);
+
+    // Flotación y respiración
+    groupRef.current.position.y = Math.sin(t * speed) * 0.1;
+    headRef.current.rotation.x = Math.sin(t * speed * 1.5) * 0.05;
   });
 
-  const materialProps = {
-    color: color,
-    wireframe: true,
-    transparent: true,
-    opacity: isMini ? 0.3 : 0.5,
-    emissive: color,
-    emissiveIntensity: (Number(stress) || 0) / 10
-  };
+  const stageScale = 0.8 + ((petData?.stage || 1) * 0.2);
 
   return (
-    <group ref={groupRef} position={isMini ? [0, -1, 0] : [0, 0, 0]}>
-      {/* Cabeza */}
-      <mesh position={[0, 3.8, 0]}>
-        <sphereGeometry args={[0.25, 16, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Pecho */}
-      <mesh position={[0, 3.1, 0]}>
-        <sphereGeometry args={[0.5 * bodyWidth, 16, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Tronco */}
-      <mesh position={[0, 2.4, 0]}>
-        <cylinderGeometry args={[0.4 * bodyWidth, 0.35 * bodyWidth, 1, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Brazos */}
-      {[1, -1].map((side) => (
-        <group key={side} position={[0.6 * side * bodyWidth, 3.1, 0]}>
-          <mesh rotation={[0, 0, 0.1 * side]}>
-            <capsuleGeometry args={[0.1, 1.2, 4, 8]} />
-            <meshStandardMaterial {...materialProps} />
-          </mesh>
-        </group>
-      ))}
-      {/* Piernas */}
-      {[1, -1].map((side) => (
-        <group key={side} position={[0.25 * side * bodyWidth, 1.5, 0]}>
-          <mesh>
-            <capsuleGeometry args={[0.15, 1.8, 4, 8]} />
-            <meshStandardMaterial {...materialProps} />
-          </mesh>
-        </group>
-      ))}
+    <group ref={groupRef} scale={isMini ? 0.5 : stageScale} position={[0, -0.5, 0]}>
+      {/* CUERPO - Más amigable que los cilindros anteriores */}
+      <Capsule args={[0.6, 0.8, 4, 16]}>
+        <meshStandardMaterial color={color} roughness={0.3} metalness={0.1} />
+      </Capsule>
+
+      {/* CABEZA */}
+      <group ref={headRef} position={[0, 0.7, 0]}>
+        <Sphere args={[0.38, 32, 32]}>
+          <meshStandardMaterial color={color} roughness={0.3} />
+        </Sphere>
+        
+        {/* OJOS ICÓNICOS - Esto le da la personalidad */}
+        <mesh position={[0.12, 0.05, 0.32]}>
+          <sphereGeometry args={[0.03, 16, 16]} />
+          <meshBasicMaterial color="black" />
+        </mesh>
+        <mesh position={[-0.12, 0.05, 0.32]}>
+          <sphereGeometry args={[0.03, 16, 16]} />
+          <meshBasicMaterial color="black" />
+        </mesh>
+        <mesh position={[0, 0.05, 0.31]}>
+          <boxGeometry args={[0.2, 0.01, 0.01]} />
+          <meshBasicMaterial color="black" />
+        </mesh>
+      </group>
+
+      {/* BRAZOS GORDITOS */}
+      <Sphere args={[0.2, 16, 16]} position={[0.7, 0.1, 0]} scale={[1, 2, 1]}>
+        <meshStandardMaterial color={color} />
+      </Sphere>
+      <Sphere args={[0.2, 16, 16]} position={[-0.7, 0.1, 0]} scale={[1, 2, 1]}>
+        <meshStandardMaterial color={color} />
+      </Sphere>
     </group>
   );
 }
 
-export default function BiometricVisualizer({ patientData, isMini = false }) {
+export default function BiometricVisualizer({ patientData, petData, isMini = false }) {
   const [mounted, setMounted] = useState(false);
 
-  // Forzamos el montaje solo en el cliente
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
-  if (!patientData || !mounted) return <div style={{height: '100%', background: '#020617'}} />;
+  if (!mounted) return <div style={{ height: isMini ? '150px' : '350px', background: '#020617' }} />;
 
   return (
     <div style={{ 
       width: '100%', 
       height: isMini ? '150px' : '350px', 
-      background: 'radial-gradient(circle, #0f172a 0%, #020617 100%)', 
-      borderRadius: isMini ? '12px' : '20px', 
+      background: 'radial-gradient(circle, #1e293b 0%, #020617 100%)', 
+      borderRadius: isMini ? '12px' : '24px', 
       overflow: 'hidden', 
       position: 'relative' 
     }}>
+      {/* TEXTO DE ESTADO GAMER */}
       {!isMini && (
-        <div style={{ 
-          position: 'absolute', top: '15px', left: '15px', zIndex: 10, 
-          fontSize: '10px', fontWeight: '800', color: '#38bdf8', 
-          textTransform: 'uppercase', letterSpacing: '1px' 
-        }}>
-          Biometric Scan v2.2
+        <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 10 }}>
+          <div style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', letterSpacing: '2px' }}>STATUS COMPAÑERO</div>
+          <div style={{ fontSize: '16px', fontWeight: '900', color: 'white' }}>
+            NIVEL {petData?.stage || 1} • {petData?.name || 'BAYMAX'}
+          </div>
         </div>
       )}
       
-      <Canvas 
-        shadows 
-        camera={{ position: [0, 2.5, isMini ? 10 : 8], fov: 45 }}
-        style={{ pointerEvents: 'none' }} // Evita interferencias con el scroll
-      >
-        <ambientLight intensity={0.5} />
+      <Canvas shadows camera={{ position: [0, 1, 5], fov: 35 }}>
+        <ambientLight intensity={0.8} />
         <pointLight position={[10, 10, 10]} intensity={1.5} />
         <spotLight position={[-10, 10, 10]} angle={0.15} penumbra={1} intensity={1} />
         
-        <HumanoidMesh 
-          stress={patientData.stress_level} 
-          weight={patientData.weight} 
-          isMini={isMini} 
-        />
+        <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.5}>
+          <BaymaxModel petData={petData} isMini={isMini} />
+        </Float>
+
+        {/* SOMBRA EN EL SUELO - Le da mucha calidad visual */}
+        <ContactShadows position={[0, -1.2, 0]} opacity={0.5} scale={6} blur={2.5} far={2} />
+        
+        {!isMini && <OrbitControls enableZoom={false} minPolarAngle={Math.PI/3} maxPolarAngle={Math.PI/1.5} />}
       </Canvas>
     </div>
   );
