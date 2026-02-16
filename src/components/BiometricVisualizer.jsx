@@ -1,122 +1,128 @@
+import React, { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useGLTF, OrbitControls, ContactShadows, Environment, Center, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-function HumanoidMesh({ stress, weight, isMini }) {
-  const groupRef = useRef();
+// 1. Componente del Modelo (Maneja la carga y el escalado)
+function Model({ url, weight }) {
+  const { scene } = useGLTF(url);
+  const modelRef = useRef();
 
-  const color = useMemo(() => {
-    const s = Number(stress) || 0;
-    const hue = ((10 - s) * 12) / 360;
-    return new THREE.Color().setHSL(hue, 0.8, 0.5);
-  }, [stress]);
-
-  const bodyWidth = useMemo(() => {
-    const w = Number(weight) || 70;
-    return Math.max(0.8, Math.min(w / 70, 1.4));
+  // Lógica de escalado basada en el peso del paciente
+  // Si el peso es 70kg, la escala es 1. Si es más, se ensancha.
+  const scale = useMemo(() => {
+    const factor = (Number(weight) || 70) / 70;
+    // Limitamos el ensanchamiento para que no se deforme demasiado
+    const widthFactor = Math.max(0.7, Math.min(factor, 1.5));
+    return [widthFactor, 1, widthFactor];
   }, [weight]);
 
+  // Rotación suave automática
   useFrame((state) => {
-    if (!groupRef.current || isMini) return;
-    const time = state.clock.getElapsedTime();
-    groupRef.current.rotation.y += 0.008;
-    const pulse = Math.sin(time * (Number(stress) > 7 ? 6 : 1.5)) * 0.1;
-    groupRef.current.position.y = -1.5 + pulse;
+    if (modelRef.current) {
+      modelRef.current.rotation.y += 0.005;
+    }
   });
 
-  const materialProps = {
-    color: color,
-    wireframe: true,
-    transparent: true,
-    opacity: isMini ? 0.3 : 0.5,
-    emissive: color,
-    emissiveIntensity: (Number(stress) || 0) / 10
-  };
-
   return (
-    <group ref={groupRef} position={isMini ? [0, -1, 0] : [0, 0, 0]}>
-      {/* Cabeza */}
-      <mesh position={[0, 3.8, 0]}>
-        <sphereGeometry args={[0.25, 16, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Pecho */}
-      <mesh position={[0, 3.1, 0]}>
-        <sphereGeometry args={[0.5 * bodyWidth, 16, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Tronco */}
-      <mesh position={[0, 2.4, 0]}>
-        <cylinderGeometry args={[0.4 * bodyWidth, 0.35 * bodyWidth, 1, 16]} />
-        <meshStandardMaterial {...materialProps} />
-      </mesh>
-      {/* Brazos */}
-      {[1, -1].map((side) => (
-        <group key={side} position={[0.6 * side * bodyWidth, 3.1, 0]}>
-          <mesh rotation={[0, 0, 0.1 * side]}>
-            <capsuleGeometry args={[0.1, 1.2, 4, 8]} />
-            <meshStandardMaterial {...materialProps} />
-          </mesh>
-        </group>
-      ))}
-      {/* Piernas */}
-      {[1, -1].map((side) => (
-        <group key={side} position={[0.25 * side * bodyWidth, 1.5, 0]}>
-          <mesh>
-            <capsuleGeometry args={[0.15, 1.8, 4, 8]} />
-            <meshStandardMaterial {...materialProps} />
-          </mesh>
-        </group>
-      ))}
-    </group>
+    <primitive 
+      ref={modelRef}
+      object={scene} 
+      scale={scale} 
+      position={[0, 0, 0]} 
+    />
   );
 }
 
+// 2. Componente de la Plataforma (Efecto Escáner Médico)
+function ScannerFloor() {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+      <circleGeometry args={[2, 32]} />
+      <meshStandardMaterial 
+        color="#1e293b" 
+        transparent 
+        opacity={0.4} 
+        roughness={0.1} 
+        metalness={0.8} 
+      />
+    </mesh>
+  );
+}
+
+// 3. Componente Principal (Visualizador)
 export default function BiometricVisualizer({ patientData, isMini = false }) {
   const [isClient, setIsClient] = useState(false);
-  const [hasError, setHasError] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Forzamos el montaje solo en el cliente
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  if (!patientData || !mounted) return <div style={{height: '100%', background: '#020617'}} />;
+  // Mientras se monta en el cliente o si no hay datos
+  if (!isClient) return <div style={{ height: isMini ? '200px' : '450px', background: '#020617' }} />;
 
   return (
     <div style={{ 
       width: '100%', 
-      height: isMini ? '150px' : '350px', 
-      background: 'radial-gradient(circle at 50% 50%, #1e293b 0%, #020617 100%)', 
-      borderRadius: isMini ? '12px' : '20px', 
-      overflow: 'hidden', 
-      position: 'relative' 
+      height: isMini ? '200px' : '450px', 
+      background: 'radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%)', 
+      borderRadius: '24px',
+      overflow: 'hidden',
+      position: 'relative',
+      border: '1px solid rgba(255,255,255,0.1)'
     }}>
-      {!isMini && (
-        <div style={{ 
-          position: 'absolute', top: '15px', left: '15px', zIndex: 10, 
-          fontSize: '10px', fontWeight: '800', color: '#38bdf8', 
-          textTransform: 'uppercase', letterSpacing: '1px' 
-        }}>
-          Biometric Scan v2.2
+      
+      {error ? (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', padding: '20px', textAlign: 'center' }}>
+          <p>⚠️ Error al cargar el modelo 3D<br/><small>Verifica que /public/avatar.glb existe</small></p>
+        </div>
+      ) : (
+        <Canvas 
+          shadows 
+          // Ajustamos la cámara: z=8 para alejarla y y=1.5 para subir el punto de vista
+          camera={{ position: [0, 1.5, 8], fov: 35 }}
+          onError={(e) => setError(e)}
+        >
+          <ambientLight intensity={1} />
+          <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={2} castShadow />
+          <pointLight position={[-10, -10, -10]} intensity={1} color="#3b82f6" />
+          
+          <Suspense fallback={<Html center><span style={{color: '#60a5fa', fontWeight: 'bold'}}>INICIANDO ESCÁNER...</span></Html>}>
+            <Environment preset="city" />
+            
+            <Center top>
+              <Model url="/avatar.glb" weight={patientData?.weight} />
+            </Center>
+
+            <ScannerFloor />
+            
+            <ContactShadows 
+              position={[0, 0, 0]} 
+              opacity={0.6} 
+              scale={10} 
+              blur={2} 
+              far={4} 
+            />
+          </Suspense>
+
+          <OrbitControls 
+            enableZoom={!isMini} 
+            minPolarAngle={Math.PI / 4} 
+            maxPolarAngle={Math.PI / 1.6}
+            target={[0, 1.2, 0]} // Enfoca la cámara a la altura del pecho
+            makeDefault
+          />
+        </Canvas>
+      )}
+
+      {/* Overlay de datos rápido */}
+      {patientData && !isMini && (
+        <div style={{ position: 'absolute', bottom: '20px', left: '20px', background: 'rgba(0,0,0,0.5)', padding: '10px 15px', borderRadius: '12px', backdropFilter: 'blur(5px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <span style={{ color: '#94a3b8', fontSize: '12px', display: 'block' }}>PACIENTE</span>
+          <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '14px' }}>{patientData.name || 'Anónimo'}</span>
         </div>
       )}
-      
-      <Canvas 
-        shadows 
-        camera={{ position: [0, 2.5, isMini ? 10 : 8], fov: 45 }}
-        style={{ pointerEvents: 'none' }} // Evita interferencias con el scroll
-      >
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1.5} />
-        <spotLight position={[-10, 10, 10]} angle={0.15} penumbra={1} intensity={1} />
-        
-        <HumanoidMesh 
-          stress={patientData.stress_level} 
-          weight={patientData.weight} 
-          isMini={isMini} 
-        />
-      </Canvas>
     </div>
   );
 }
