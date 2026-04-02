@@ -2,12 +2,13 @@
   "name": "salud360-ia-demo",
   "version": "1.0.0",
   "description": "MVP de pre-diagnóstico médico con IA",
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
-  "engines":{
+  "engines": {
     "node": ">=20"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "@react-three/fiber": "^8.17.10",
     "@supabase/supabase-js": "^2.39.7",
     "@types/three": "^0.182.0",
+    "dotenv": "^17.3.1",
     "groq-sdk": "^0.3.0",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^2.5.2",
