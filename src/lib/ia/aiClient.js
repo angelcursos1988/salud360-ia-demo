@@ -1,20 +1,30 @@
-export async function callIA(messages) {
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages,
-        temperature: 0.4,
-      }),
-    }
-  );
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+export async function callIA(messages) {
+  try {
+    const model = client.getGenerativeModel({
+      model: process.env.GEMINI_MODEL, 
+    });
+
+    // Convertimos mensajes a texto plano
+    const prompt = messages
+      .map(m => `${m.role}: ${m.content}`)
+      .join("\n");
+
+
+    const result = await model.generateContent(prompt);
+
+    const response = await result.response;
+    const text = response.text();
+
+    console.log("Respuesta Gemini:", text);
+
+    return text;
+
+  } catch (error) {
+    console.error("ERROR GEMINI:", error);
+    throw error;
+  }
 }
